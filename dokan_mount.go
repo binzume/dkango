@@ -133,8 +133,8 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, erro
 	return ctx, nil
 }
 
-func (c *MountInfo) Close() {
-	CloseHandle(c.handle)
+func (c *MountInfo) Close() error {
+	return CloseHandle(c.handle)
 }
 
 func getMountInfo(finfo *DokanFileInfo) *MountInfo {
