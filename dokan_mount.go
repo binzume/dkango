@@ -410,17 +410,9 @@ var deleteFile = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) u
 		log.Println("DeleteFile: not opened?")
 		return STATUS_ACCESS_DENINED
 	}
-
-	log.Println("DeleteFile:", f.name)
-	if fsys, ok := f.mi.fsys.(RemoveFS); ok {
-		err := fsys.Remove(f.name)
-		if err != nil {
-			return STATUS_OBJECT_NAME_NOT_FOUND
-		}
-	} else {
-		return STATUS_NOT_SUPPORTED
+	if finfo.DeleteOnClose != 0 {
+		log.Println("DeleteFile:", f.name)
 	}
-
 	return STATUS_SUCCESS
 })
 
@@ -430,6 +422,8 @@ var deleteDir = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) ui
 		log.Println("DeleteDir: not opened?")
 		return STATUS_ACCESS_DENINED
 	}
-	log.Println("TODO: DeleteDir: ", f.name)
+	if finfo.DeleteOnClose != 0 {
+		log.Println("DeleteDir:", f.name)
+	}
 	return STATUS_SUCCESS
 })
