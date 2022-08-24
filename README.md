@@ -1,9 +1,9 @@
-# WIP: Dokan binding fo Go
+# Dokan bindings for Go
 
 Dokan: https://ja.wikipedia.org/wiki/Dokan
 
-- Depends only on the Dokan library (No CGO)
-- fs.FS support
+- Depends only on the Dokan library (No cgo)
+- fs.FS interface support
 
 ## Usage
 
