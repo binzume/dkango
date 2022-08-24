@@ -9,21 +9,29 @@ import (
 	"github.com/binzume/dkango"
 )
 
-type WritableDirFS struct {
-	fs.FS
+type writableDirFS struct {
+	fs.StatFS
 	path string
 }
 
-func (fsys *WritableDirFS) OpenWriter(name string) (io.WriteCloser, error) {
+func NewWritableDirFS(path string) *writableDirFS {
+	return &writableDirFS{StatFS: os.DirFS(path).(fs.StatFS), path: path}
+}
+
+func (fsys *writableDirFS) OpenWriter(name string) (io.WriteCloser, error) {
 	return os.OpenFile(path.Join(fsys.path, name), os.O_RDWR|os.O_CREATE, fs.ModePerm)
 }
 
-func (fsys *WritableDirFS) Truncate(name string, size int64) error {
+func (fsys *writableDirFS) Truncate(name string, size int64) error {
 	return os.Truncate(name, size)
 }
 
-func (fsys *WritableDirFS) Remove(name string) error {
+func (fsys *writableDirFS) Remove(name string) error {
 	return os.Remove(path.Join(fsys.path, name))
+}
+
+func (fsys *writableDirFS) Mkdir(name string, mode fs.FileMode) error {
+	return os.Mkdir(path.Join(fsys.path, name), mode)
 }
 
 func main() {
@@ -40,7 +48,7 @@ func main() {
 		mountPoint = os.Args[2]
 	}
 
-	mount, _ := dkango.MountFS(mountPoint, &WritableDirFS{FS: os.DirFS(srcDir), path: srcDir}, nil)
+	mount, _ := dkango.MountFS(mountPoint, NewWritableDirFS(srcDir), nil)
 	defer mount.Close()
 
 	// Block forever

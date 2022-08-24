@@ -78,6 +78,10 @@ func (fsys *testWritableFs) Remove(name string) error {
 	return os.Remove(path.Join(fsys.path, name))
 }
 
+func (fsys *testWritableFs) Mkdir(name string, mode fs.FileMode) error {
+	return os.Mkdir(path.Join(fsys.path, name), mode)
+}
+
 func TestWritableFS(t *testing.T) {
 
 	mount, err := MountFS(mountPoint, &testWritableFs{FS: os.DirFS(srcDir), path: srcDir}, nil)
@@ -113,5 +117,17 @@ func TestWritableFS(t *testing.T) {
 	err = os.Remove(fname)
 	if err != nil {
 		t.Fatal("Remove() error", err)
+	}
+
+	dname := mountPoint + "\\dir"
+
+	err = os.Mkdir(dname, fs.ModePerm)
+	if err != nil {
+		t.Fatal("Mkdir() error", err)
+	}
+
+	err = os.Remove(dname)
+	if err != nil {
+		t.Fatal("Remove() dir error", err)
 	}
 }

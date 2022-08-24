@@ -25,7 +25,7 @@ type RemoveFS interface {
 
 type MkdirFS interface {
 	fs.FS
-	Mkdir(name string) error
+	Mkdir(name string, ignored fs.FileMode) error
 }
 
 type MountOptions struct {
@@ -217,6 +217,13 @@ var zwCreateFile = syscall.NewCallback(func(pname *uint16, secCtx uintptr, mask,
 		log.Println("Stat error", name, err, createDisp)
 		return STATUS_OBJECT_NAME_NOT_FOUND
 	}
+	if createDisp == FILE_CREATE && createOpt&1 != 0 {
+		if fsys, ok := dk.fsys.(MkdirFS); ok {
+			fsys.Mkdir(name, fs.ModePerm)
+		} else {
+			return STATUS_NOT_SUPPORTED
+		}
+	}
 
 	if truncate {
 		// TODO: Support Open(name) and f.Truncate(size)
@@ -378,19 +385,17 @@ var cleanup = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) uint
 		return STATUS_ACCESS_DENINED
 	}
 
-	if finfo.DeleteOnClose != 0 {
-		log.Println("DeleteOnClose: ", f.name)
-		if fsys, ok := f.mi.fsys.(RemoveFS); ok {
-			err := fsys.Remove(f.name)
-			if err != nil {
-				return STATUS_ACCESS_DENINED
-			}
-
-		} else {
+	if finfo.DeleteOnClose == 0 {
+		return STATUS_SUCCESS
+	}
+	log.Println("DeleteOnClose: ", f.name)
+	if fsys, ok := f.mi.fsys.(RemoveFS); ok {
+		err := fsys.Remove(f.name)
+		if err != nil {
 			return STATUS_ACCESS_DENINED
 		}
 	}
-	return STATUS_SUCCESS
+	return STATUS_ACCESS_DENINED
 })
 
 var closeFile = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) uintptr {
