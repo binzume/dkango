@@ -35,14 +35,20 @@ func main() {
 }
 ```
 
-### need writable FS? (WIP)
+### need writable FS?
 
 ```go
 type WritableFS interface {
 	fs.FS
-	OpenWriter(name string) (io.WriteCloser, error)
+	OpenWriter(name string) (io.WriteCloser, error) // TODO: add oepn flags?
 	Truncate(name string, size int64) error
 }
+```
+
+See examples/writable/writable.go
+
+```
+go run ./examples/writable testdir R:
 ```
 
 ## License
