@@ -13,9 +13,11 @@ Dokan: https://ja.wikipedia.org/wiki/Dokan
 winget install dokan-dev.Dokany
 ```
 
-### sample.go
+### examples/simple/simple.go
 
 ```go
+package main
+
 import (
 	"os"
 	"github.com/binzume/dkango"
@@ -25,11 +27,11 @@ func main() {
 	dkango.Init()
 	defer dkango.Shutdown()
 
-	mount, _ := dkango.MountFS("X:", os.DirFS("srcdir"))
+	mount, _ := dkango.MountFS("X:", os.DirFS("."), nil)
 	defer mount.Close()
 
 	// Block forever
-	select{}
+	select {}
 }
 ```
 
