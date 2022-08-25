@@ -337,12 +337,15 @@ var readFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, read
 		f.file = r
 	}
 
-	if r, ok := f.file.(io.ReadSeeker); ok {
-		r.Seek(offset, 0)
-		n, err := r.Read(unsafe.Slice(buf, sz))
+	if r, ok := f.file.(io.ReaderAt); ok {
+		n, err := r.ReadAt(unsafe.Slice(buf, sz), offset)
 		*read = int32(n)
-		if errors.Is(err, io.EOF) {
-			return STATUS_END_OF_FILE
+		if n == 0 {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return STATUS_END_OF_FILE
+			} else {
+				return STATUS_ACCESS_DENINED
+			}
 		}
 		return STATUS_SUCCESS
 	}
@@ -373,9 +376,8 @@ var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, wri
 		f.file = r
 	}
 
-	if w, ok := f.file.(io.WriteSeeker); ok {
-		w.Seek(offset, 0)
-		n, err := w.Write(unsafe.Slice(buf, sz))
+	if w, ok := f.file.(io.WriterAt); ok {
+		n, err := w.WriteAt(unsafe.Slice(buf, sz), offset)
 		*written = int32(n)
 		if errors.Is(err, io.EOF) {
 			return STATUS_END_OF_FILE
