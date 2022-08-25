@@ -40,7 +40,7 @@ func main() {
 ```go
 type WritableFS interface {
 	fs.FS
-	OpenWriter(name string) (io.WriteCloser, error) // TODO: add oepn flags?
+	OpenWriter(name string, flag int) (io.WriteCloser, error)
 	Truncate(name string, size int64) error
 }
 ```

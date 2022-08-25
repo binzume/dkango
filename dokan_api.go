@@ -12,6 +12,7 @@ const DOKAN_MINIMUM_COMPATIBLE_VERSION = 200
 const VOLUME_SECURITY_DESCRIPTOR_MAX_SIZE = (1024 * 16)
 const MAX_PATH = 260
 
+// DokanOptions
 const (
 	DOKAN_OPTION_DEBUG              = 1
 	DOKAN_OPTION_STDERR             = 2
@@ -24,6 +25,7 @@ const (
 	DOKAN_OPTION_FILELOCK_USER_MODE = 256
 )
 
+// NTSTATUS
 const (
 	STATUS_SUCCESS               = 0
 	STATUS_INVALID_PARAMETER     = 0xC000000D
@@ -35,6 +37,7 @@ const (
 	STATUS_NOT_A_DIRECTORY       = 0xC0000103
 )
 
+// File attribute
 const (
 	FILE_ATTRIBUTE_READONLY  = 1
 	FILE_ATTRIBUTE_HIDDEN    = 2
@@ -44,6 +47,36 @@ const (
 	FILE_ATTRIBUTE_NORMAL    = 128
 
 	FILE_FLAG_DELETE_ON_CLOSE = 0x04000000
+)
+
+// ZwCreateFile options
+// https://docs.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile
+const (
+	// options
+	FILE_DIRECTORY_FILE     = 0x01
+	FILE_WRITE_THROUGH      = 0x02
+	FILE_SEQUENTIAL_ONLY    = 0x04
+	FILE_NON_DIRECTORY_FILE = 0x40
+	FILE_DELETE_ON_CLOSE    = 0x000010
+
+	// disposition
+	FILE_SUPERSEDE    = 0
+	FILE_OPEN         = 1
+	FILE_CREATE       = 2
+	FILE_OPEN_IF      = 3
+	FILE_OVERWRITE    = 4
+	FILE_OVERWRITE_IF = 5
+
+	// access
+	FILE_READ_DATA        = 1
+	FILE_WRITE_DATA       = 2
+	FILE_APPEND_DATA      = 4
+	FILE_READ_EA          = 8
+	FILE_WRITE_EA         = 0x10
+	FILE_EXECUTE          = 0x20
+	FILE_DELETE_CHILD     = 0x40
+	FILE_READ_ATTRIBUTES  = 0x80
+	FILE_WRITE_ATTRIBUTES = 0x100
 )
 
 type MountPointInfo struct {

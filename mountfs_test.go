@@ -1,19 +1,24 @@
 package dkango
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path"
 	"testing"
-	"time"
 )
 
 const srcDir = "."
 const mountPoint = "X:"
 
 func TestMain(m *testing.M) {
-	Init()
+	err := Init()
+	if err != nil {
+		fmt.Println("Failed to initialize:", err)
+		os.Exit(1)
+	}
 	defer Shutdown()
 	os.Exit(m.Run())
 }
@@ -41,23 +46,55 @@ func TestMountFS(t *testing.T) {
 		t.Error("mount points != 1: ", n)
 	}
 
-	stat, err := os.Stat(mountPoint + "\\README.md")
+	fname := mountPoint + "/LICENSE"
+
+	stat, err := os.Stat(fname)
 	t.Log("Name: ", stat.Name())
 	t.Log("Size: ", stat.Size())
 	t.Log("ModTime: ", stat.ModTime())
 	t.Log("IsDir: ", stat.IsDir())
 	t.Log("Mode: ", stat.Mode())
 
-	b, err := os.ReadFile(mountPoint + "\\README.md")
+	r, err := os.Open(fname)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("Open() error", err)
 	}
-	t.Log("Content: ", string(b), err)
 
-	<-time.After(1 * time.Second)
+	_, err = r.Write([]byte("Test"))
+	if err == nil {
+		t.Error("Write() shoudl be failed")
+	}
+
+	buf := make([]byte, 100)
+	_, err = r.Read(buf)
+	if err != nil {
+		t.Error("Read() error", err)
+	}
+
+	err = r.Close()
+	if err != nil {
+		t.Error("Close() error", err)
+	}
+
+	r, err = os.Open(mountPoint + "/notfound")
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Error("Open() for not exitst file shoudl be failed.", err)
+	}
+
+	r, err = os.OpenFile(mountPoint+"/notfound", os.O_CREATE|os.O_WRONLY, 0)
+	if !errors.Is(err, fs.ErrPermission) {
+		t.Error("OpenFile() wtih O_CREATE shoudl be failed.", err)
+	}
+
+	b, err := os.ReadFile(fname)
+	if err != nil {
+		t.Error("ReadFile() error", err)
+	}
+	t.Log("Content: ", string(b))
 
 	if mount.OpenedFileCount() != 0 {
-		t.Error("Opened files: ", mount.OpenedFileCount())
+		// Not an issue because other processeses maybe open files
+		t.Log("Opened files: ", mount.OpenedFileCount())
 	}
 }
 
@@ -66,8 +103,8 @@ type testWritableFs struct {
 	path string
 }
 
-func (fsys *testWritableFs) OpenWriter(name string) (io.WriteCloser, error) {
-	return os.OpenFile(path.Join(fsys.path, name), os.O_RDWR|os.O_CREATE, fs.ModePerm)
+func (fsys *testWritableFs) OpenWriter(name string, flag int) (io.WriteCloser, error) {
+	return os.OpenFile(path.Join(fsys.path, name), flag, fs.ModePerm)
 }
 
 func (fsys *testWritableFs) Truncate(name string, size int64) error {
@@ -92,8 +129,7 @@ func TestWritableFS(t *testing.T) {
 
 	fname := mountPoint + "\\output.txt"
 
-	// TODO
-	_ = os.Remove(srcDir + "/output.txt")
+	_ = os.Remove(fname)
 
 	f, err := os.Create(fname)
 	if err != nil {

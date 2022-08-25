@@ -18,8 +18,8 @@ func NewWritableDirFS(path string) *writableDirFS {
 	return &writableDirFS{StatFS: os.DirFS(path).(fs.StatFS), path: path}
 }
 
-func (fsys *writableDirFS) OpenWriter(name string) (io.WriteCloser, error) {
-	return os.OpenFile(path.Join(fsys.path, name), os.O_RDWR|os.O_CREATE, fs.ModePerm)
+func (fsys *writableDirFS) OpenWriter(name string, flag int) (io.WriteCloser, error) {
+	return os.OpenFile(path.Join(fsys.path, name), flag, fs.ModePerm)
 }
 
 func (fsys *writableDirFS) Truncate(name string, size int64) error {

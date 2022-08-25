@@ -12,9 +12,15 @@ import (
 	"unsafe"
 )
 
+// You can change this before MountFS() for debugging purpose.
+var OptionFlags uint32 = DOKAN_OPTION_ALT_STREAM // | DOKAN_OPTION_DEBUG | DOKAN_OPTION_STDERR
+
+// UnixTime epoch from 16001-01-01 (UTC) in 0.1us.
+const UnixTimeOffset = 116444736000000000
+
 type WritableFS interface {
 	fs.FS
-	OpenWriter(name string) (io.WriteCloser, error)
+	OpenWriter(name string, flag int) (io.WriteCloser, error)
 	Truncate(name string, size int64) error
 }
 
@@ -43,6 +49,8 @@ type MountInfo struct {
 	openedFiles map[*openedFile]struct{}
 	mounted     sync.WaitGroup
 	lock        sync.Mutex
+	operations  *DokanOperations
+	options     *DokanOptions
 }
 
 func (m *MountInfo) addFile(f *openedFile) {
@@ -58,6 +66,8 @@ func (m *MountInfo) removeFile(f *openedFile) {
 }
 
 func (m *MountInfo) OpenedFileCount() int {
+	m.lock.Lock()
+	defer m.lock.Unlock()
 	return len(m.openedFiles)
 }
 
@@ -91,9 +101,9 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, erro
 	options := &DokanOptions{
 		Version:       205,
 		GlobalContext: uint64(uintptr(unsafe.Pointer(ctx))),
-		// SingleThread: 1,
+		// SingleThread:  1,
 		MountPoint: uintptr(path),
-		Options:    DOKAN_OPTION_ALT_STREAM, //| DOKAN_OPTION_DEBUG | DOKAN_OPTION_STDERR,
+		Options:    OptionFlags,
 	}
 	operations := &DokanOperations{
 		ZwCreateFile: zwCreateFile,
@@ -129,6 +139,8 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, erro
 		return nil, err
 	}
 	ctx.handle = handle
+	ctx.options = options
+	ctx.operations = operations
 	ctx.mounted.Wait()
 	return ctx, nil
 }
@@ -188,9 +200,9 @@ var unmounted = syscall.NewCallback(func(finfo *DokanFileInfo) uintptr {
 	return STATUS_SUCCESS
 })
 
-var zwCreateFile = syscall.NewCallback(func(pname *uint16, secCtx uintptr, mask, attrs, share, createDisp, createOpt uint32, finfo *DokanFileInfo) uintptr {
-	dk := getMountInfo(finfo)
-	if dk == nil {
+var zwCreateFile = syscall.NewCallback(func(pname *uint16, secCtx uintptr, access, attrs, share, disposition, options uint32, finfo *DokanFileInfo) uintptr {
+	mi := getMountInfo(finfo)
+	if mi == nil {
 		return STATUS_INVALID_PARAMETER
 	}
 
@@ -199,41 +211,40 @@ var zwCreateFile = syscall.NewCallback(func(pname *uint16, secCtx uintptr, mask,
 	if name == "" {
 		name = "."
 	}
-	log.Println("ZwCreateFile", createOpt, createDisp, attrs, name)
 
-	const (
-		FILE_SUPERSEDE    = 0
-		FILE_OPEN         = 1
-		FILE_CREATE       = 2
-		FILE_OPEN_IF      = 3
-		FILE_OVERWRITE    = 4
-		FILE_OVERWRITE_IF = 5
-	)
-	create := createDisp == FILE_CREATE || createDisp == FILE_OPEN_IF || createDisp == FILE_OVERWRITE_IF || createDisp == FILE_SUPERSEDE
-	truncate := createDisp == FILE_SUPERSEDE || createDisp == FILE_OVERWRITE || createDisp == FILE_OVERWRITE_IF
+	create := disposition == FILE_CREATE || disposition == FILE_OPEN_IF || disposition == FILE_OVERWRITE_IF || disposition == FILE_SUPERSEDE
+	truncate := disposition == FILE_SUPERSEDE || disposition == FILE_OVERWRITE || disposition == FILE_OVERWRITE_IF
 
-	stat, err := fs.Stat(dk.fsys, name)
+	stat, err := fs.Stat(mi.fsys, name)
 	if !(create && errors.Is(err, fs.ErrNotExist)) && err != nil {
-		log.Println("Stat error", name, err, createDisp)
 		return STATUS_OBJECT_NAME_NOT_FOUND
 	}
-	if createDisp == FILE_CREATE && createOpt&1 != 0 {
-		if fsys, ok := dk.fsys.(MkdirFS); ok {
+	if disposition == FILE_CREATE && options&FILE_DIRECTORY_FILE != 0 {
+		if fsys, ok := mi.fsys.(MkdirFS); ok {
 			fsys.Mkdir(name, fs.ModePerm)
 		} else {
 			return STATUS_NOT_SUPPORTED
 		}
 	}
+	if access&FILE_WRITE_DATA != 0 {
+		_, ok := mi.fsys.(interface {
+			OpenWriter(string, int) (io.WriteCloser, error)
+		})
+		if !ok {
+			// Read only FS
+			return STATUS_ACCESS_DENINED
+		}
+	}
 
 	if truncate {
 		// TODO: Support Open(name) and f.Truncate(size)
-		if fsys, ok := dk.fsys.(WritableFS); ok {
+		if fsys, ok := mi.fsys.(WritableFS); ok {
 			fsys.Truncate(name, 0)
 		}
 	}
 
-	f := &openedFile{name: name, mi: dk, stat: stat}
-	dk.addFile(f) // avoid GC
+	f := &openedFile{name: name, mi: mi, stat: stat}
+	mi.addFile(f) // avoid GC
 	finfo.Context = uint64(uintptr(unsafe.Pointer(f)))
 
 	return STATUS_SUCCESS
@@ -266,7 +277,7 @@ var findFiles = syscall.NewCallback(func(pname *uint16, fillFindData uintptr, fi
 		if err == nil {
 			fi.FileSizeLow = uint32(info.Size())
 			fi.FileSizeHigh = uint32(info.Size() >> 32)
-			t := (info.ModTime().UnixNano())/100 + 116444736000000000 // UnixTime to 16001-01-01 (UTC)
+			t := (info.ModTime().UnixNano())/100 + UnixTimeOffset
 			fi.LastWriteTime[0] = uint32(t)
 			fi.LastWriteTime[1] = uint32(t >> 32)
 			fi.LastAccessTime = fi.LastWriteTime
@@ -301,7 +312,7 @@ var getFileInformation = syscall.NewCallback(func(pname *uint16, fi *ByHandleFil
 	}
 	fi.FileSizeLow = uint32(f.stat.Size())
 	fi.FileSizeHigh = uint32(f.stat.Size() >> 32)
-	t := (f.stat.ModTime().UnixNano())/100 + 116444736000000000 // UnixTime to 16001-01-01 (UTC)
+	t := (f.stat.ModTime().UnixNano())/100 + UnixTimeOffset
 	fi.LastWriteTime[0] = uint32(t)
 	fi.LastWriteTime[1] = uint32(t >> 32)
 	fi.LastAccessTime = fi.LastWriteTime
@@ -318,12 +329,8 @@ var readFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, read
 		return STATUS_ACCESS_DENINED
 	}
 
-	name := syscall.UTF16ToString(unsafe.Slice(pname, 260))
-	name = strings.TrimPrefix(filepath.ToSlash(name), "/")
-	log.Println("ReadFile", f.name, "  ", name)
-
 	if f.file == nil {
-		r, err := f.mi.fsys.Open(name)
+		r, err := f.mi.fsys.Open(f.name)
 		if err != nil {
 			return STATUS_ACCESS_DENINED
 		}
@@ -350,7 +357,7 @@ var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, wri
 	}
 
 	fsys, ok := f.mi.fsys.(interface {
-		OpenWriter(string) (io.WriteCloser, error)
+		OpenWriter(string, int) (io.WriteCloser, error)
 	})
 	if !ok {
 		log.Println("WriteFile: not support OpenWriter?")
@@ -359,7 +366,7 @@ var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, wri
 	f.stat = nil // invalidate cached stat
 
 	if f.file == nil {
-		r, err := fsys.OpenWriter(f.name)
+		r, err := fsys.OpenWriter(f.name, syscall.O_RDWR|syscall.O_CREAT)
 		if err != nil {
 			return STATUS_ACCESS_DENINED
 		}
@@ -388,7 +395,6 @@ var cleanup = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) uint
 	if finfo.DeleteOnClose == 0 {
 		return STATUS_SUCCESS
 	}
-	log.Println("DeleteOnClose: ", f.name)
 	if fsys, ok := f.mi.fsys.(RemoveFS); ok {
 		err := fsys.Remove(f.name)
 		if err != nil {
@@ -415,9 +421,6 @@ var deleteFile = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) u
 		log.Println("DeleteFile: not opened?")
 		return STATUS_ACCESS_DENINED
 	}
-	if finfo.DeleteOnClose != 0 {
-		log.Println("DeleteFile:", f.name)
-	}
 	return STATUS_SUCCESS
 })
 
@@ -426,9 +429,6 @@ var deleteDir = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) ui
 	if f == nil {
 		log.Println("DeleteDir: not opened?")
 		return STATUS_ACCESS_DENINED
-	}
-	if finfo.DeleteOnClose != 0 {
-		log.Println("DeleteDir:", f.name)
 	}
 	return STATUS_SUCCESS
 })
