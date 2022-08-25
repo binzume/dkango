@@ -86,21 +86,49 @@ func (f *openedFile) Close() {
 	}
 }
 
+// keep instances to prevent from GC
+var instances = map[*MountInfo]struct{}{}
+var instancesLock sync.Mutex
+
+func registerInstance(mi *MountInfo) error {
+	instancesLock.Lock()
+	defer instancesLock.Unlock()
+	if len(instances) == 0 {
+		if err := Init(); err != nil {
+			return err
+		}
+	}
+	instances[mi] = struct{}{}
+	return nil
+}
+
+func unregisterInstance(mi *MountInfo) {
+	instancesLock.Lock()
+	defer instancesLock.Unlock()
+	delete(instances, mi)
+	if len(instances) == 0 {
+		_ = Shutdown()
+	}
+}
+
 func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, error) {
 	if opt == nil {
 		opt = &MountOptions{
-			VolumeName:     "fuse volume",
+			VolumeName:     "",
 			FileSystemName: "Dokan",
 			TotalBytes:     1024 * 1024 * 1024,
 			AvailableBytes: 1024 * 1024 * 1024,
 		}
 	}
-	ctx := &MountInfo{fsys: fsys, opt: opt, openedFiles: map[*openedFile]struct{}{}}
-	ctx.mounted.Add(1)
+	mi := &MountInfo{fsys: fsys, opt: opt, openedFiles: map[*openedFile]struct{}{}}
+	if err := registerInstance(mi); err != nil {
+		return nil, err
+	}
+	mi.mounted.Add(1)
 	path := unsafe.Pointer(syscall.StringToUTF16Ptr(mountPoint))
 	options := &DokanOptions{
 		Version:       205,
-		GlobalContext: uint64(uintptr(unsafe.Pointer(ctx))),
+		GlobalContext: uint64(uintptr(unsafe.Pointer(mi))),
 		// SingleThread:  1,
 		MountPoint: uintptr(path),
 		Options:    OptionFlags,
@@ -136,17 +164,20 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, erro
 
 	handle, err := CreateFileSystem(options, operations)
 	if err != nil {
+		unregisterInstance(mi)
 		return nil, err
 	}
-	ctx.handle = handle
-	ctx.options = options
-	ctx.operations = operations
-	ctx.mounted.Wait()
-	return ctx, nil
+	mi.handle = handle
+	mi.options = options
+	mi.operations = operations
+	mi.mounted.Wait()
+	return mi, nil
 }
 
-func (c *MountInfo) Close() error {
-	return CloseHandle(c.handle)
+func (mi *MountInfo) Close() error {
+	err := CloseHandle(mi.handle)
+	unregisterInstance(mi)
+	return err
 }
 
 func getMountInfo(finfo *DokanFileInfo) *MountInfo {

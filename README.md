@@ -24,9 +24,6 @@ import (
 )
 
 func main() {
-	dkango.Init()
-	defer dkango.Shutdown()
-
 	mount, _ := dkango.MountFS("X:", os.DirFS("."), nil)
 	defer mount.Close()
 

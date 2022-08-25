@@ -2,7 +2,6 @@ package dkango
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -12,16 +11,6 @@ import (
 
 const srcDir = "."
 const mountPoint = "X:"
-
-func TestMain(m *testing.M) {
-	err := Init()
-	if err != nil {
-		fmt.Println("Failed to initialize:", err)
-		os.Exit(1)
-	}
-	defer Shutdown()
-	os.Exit(m.Run())
-}
 
 func TestMountFS(t *testing.T) {
 	n, err := MountPoints()

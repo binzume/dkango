@@ -35,9 +35,6 @@ func (fsys *writableDirFS) Mkdir(name string, mode fs.FileMode) error {
 }
 
 func main() {
-	dkango.Init()
-	defer dkango.Shutdown()
-
 	srcDir := "."
 	mountPoint := "X:"
 
