@@ -35,6 +35,10 @@ func TestMountFS(t *testing.T) {
 		t.Error("mount points != 1: ", n)
 	}
 
+	if err != nil {
+		t.Error("ReadDir() error", err)
+	}
+
 	fname := mountPoint + "/LICENSE"
 
 	stat, err := os.Stat(fname)
@@ -113,8 +117,7 @@ func (fsys *testWritableFs) Rename(name, newName string) error {
 }
 
 func TestWritableFS(t *testing.T) {
-	OptionFlags = DOKAN_OPTION_ALT_STREAM | DOKAN_OPTION_DEBUG | DOKAN_OPTION_STDERR
-
+	// OptionFlags = DOKAN_OPTION_ALT_STREAM | DOKAN_OPTION_DEBUG | DOKAN_OPTION_STDERR
 	mount, err := MountFS(mountPoint, &testWritableFs{FS: os.DirFS(srcDir), path: srcDir}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -125,6 +128,12 @@ func TestWritableFS(t *testing.T) {
 
 	_ = os.Remove(fname)
 	_ = os.Remove(fname + ".renamed")
+
+	files, err := os.ReadDir(mountPoint)
+	if err != nil {
+		t.Fatal("ReadDir() error", err)
+	}
+	t.Log("files: ", len(files))
 
 	f, err := os.Create(fname)
 	if err != nil {

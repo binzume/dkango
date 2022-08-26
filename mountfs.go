@@ -155,8 +155,8 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, erro
 
 		// FlushFileBuffers:   debugCallback,
 		GetFileInformation: getFileInformation,
-		FindFiles:          findFiles,
-		// FindFilesWithPattern: debugCallback,
+		FindFiles:          syscall.NewCallback(findFiles),
+		// FindFilesWithPattern: syscall.NewCallback(findFilesWithPattern),
 		// SetFileAttributes:    debugCallback,
 		// SetFileTime:          debugCallback,
 		DeleteFile:        deleteFile,
@@ -205,13 +205,13 @@ func getOpenedFile(finfo *DokanFileInfo) *openedFile {
 
 var debugCallback = syscall.NewCallback(func(param uintptr) uintptr {
 	log.Println("debugCallback", param)
-	return STATUS_ACCESS_DENINED
+	return STATUS_ACCESS_DENIED
 })
 
 var getVolumeInformation = syscall.NewCallback(func(pName *uint16, nameSize int32, serial *uint32, maxCLen *uint32, flags *uint32, pSysName *uint16, sysNameSize int32, finfo *DokanFileInfo) uintptr {
 	dk := getMountInfo(finfo)
 	if dk == nil {
-		return STATUS_ACCESS_DENINED
+		return STATUS_ACCESS_DENIED
 	}
 	copy(unsafe.Slice(pName, nameSize), syscall.StringToUTF16(dk.opt.VolumeName))
 	copy(unsafe.Slice(pSysName, sysNameSize), syscall.StringToUTF16(dk.opt.FileSystemName))
@@ -272,11 +272,15 @@ var zwCreateFile = syscall.NewCallback(func(pname *uint16, secCtx uintptr, acces
 			return STATUS_NOT_SUPPORTED
 		}
 	}
+	if stat != nil && stat.IsDir() && options&FILE_NON_DIRECTORY_FILE != 0 {
+		return STATUS_FILE_IS_A_DIRECTORY
+	}
+
 	if access&FILE_WRITE_DATA != 0 {
 		_, ok := mi.fsys.(OpenWriterFS)
 		if !ok {
 			// Read only FS
-			return STATUS_ACCESS_DENINED
+			return STATUS_ACCESS_DENIED
 		}
 	}
 
@@ -294,11 +298,11 @@ var zwCreateFile = syscall.NewCallback(func(pname *uint16, secCtx uintptr, acces
 	return STATUS_SUCCESS
 })
 
-var findFiles = syscall.NewCallback(func(pname *uint16, fillFindData uintptr, finfo *DokanFileInfo) uintptr {
+func findFiles(pname *uint16, fillFindData uintptr, finfo *DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("FindFIles not opened?")
-		return STATUS_ACCESS_DENINED
+		return STATUS_INVALID_PARAMETER
 	}
 	if f.name == "" {
 		f.name = "."
@@ -335,7 +339,7 @@ var findFiles = syscall.NewCallback(func(pname *uint16, fillFindData uintptr, fi
 		r, err := fsys.OpenDir(f.name)
 		if err != nil {
 			log.Println("OpenDir()", f.name, err)
-			return STATUS_ACCESS_DENINED
+			return STATUS_ACCESS_DENIED
 		}
 		for {
 			if files, _ := r.ReadDir(256); len(files) == 0 || !proc(files) {
@@ -346,19 +350,24 @@ var findFiles = syscall.NewCallback(func(pname *uint16, fillFindData uintptr, fi
 		files, err := fs.ReadDir(f.mi.fsys, f.name)
 		if err != nil {
 			log.Println("ReadDir()", f.name, err)
-			return STATUS_ACCESS_DENINED
+			return STATUS_ACCESS_DENIED
 		}
 		proc(files)
 	}
 
 	return STATUS_SUCCESS
-})
+}
+
+func findFilesWithPattern(pname *uint16, pattern *uint16, fillFindData uintptr, finfo *DokanFileInfo) uintptr {
+	// TODO: pattern
+	return findFiles(pname, fillFindData, finfo)
+}
 
 var getFileInformation = syscall.NewCallback(func(pname *uint16, fi *ByHandleFileInfo, finfo *DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("GetFileInfo: not opened?")
-		return STATUS_ACCESS_DENINED
+		return STATUS_INVALID_PARAMETER
 	}
 
 	if f.stat == nil {
@@ -368,7 +377,7 @@ var getFileInformation = syscall.NewCallback(func(pname *uint16, fi *ByHandleFil
 		}
 	}
 	if f.stat == nil {
-		return STATUS_ACCESS_DENINED
+		return STATUS_ACCESS_DENIED
 	}
 	if f.stat.IsDir() {
 		fi.FileAttributes = FILE_ATTRIBUTE_DIRECTORY
@@ -391,13 +400,13 @@ var readFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, read
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("ReadFile: not opened?")
-		return STATUS_ACCESS_DENINED
+		return STATUS_INVALID_PARAMETER
 	}
 
 	if f.file == nil {
 		r, err := f.mi.fsys.Open(f.name)
 		if err != nil {
-			return STATUS_ACCESS_DENINED
+			return STATUS_ACCESS_DENIED
 		}
 		f.file = r
 	}
@@ -409,19 +418,19 @@ var readFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, read
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 				return STATUS_END_OF_FILE
 			} else {
-				return STATUS_ACCESS_DENINED
+				return STATUS_ACCESS_DENIED
 			}
 		}
 		return STATUS_SUCCESS
 	}
-	return STATUS_ACCESS_DENINED
+	return STATUS_ACCESS_DENIED
 })
 
 var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, written *int32, offset int64, finfo *DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("WriteFile: not opened?")
-		return STATUS_ACCESS_DENINED
+		return STATUS_INVALID_PARAMETER
 	}
 
 	fsys, ok := f.mi.fsys.(OpenWriterFS)
@@ -434,7 +443,7 @@ var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, wri
 	if f.file == nil {
 		r, err := fsys.OpenWriter(f.name, syscall.O_RDWR|syscall.O_CREAT)
 		if err != nil {
-			return STATUS_ACCESS_DENINED
+			return STATUS_ACCESS_DENIED
 		}
 		f.file = r
 	}
@@ -447,14 +456,14 @@ var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, wri
 		}
 		return STATUS_SUCCESS
 	}
-	return STATUS_ACCESS_DENINED
+	return STATUS_ACCESS_DENIED
 })
 
 var cleanup = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("CloseFile: not opened?")
-		return STATUS_ACCESS_DENINED
+		return STATUS_INVALID_PARAMETER
 	}
 
 	if finfo.DeleteOnClose == 0 {
@@ -463,17 +472,17 @@ var cleanup = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) uint
 	if fsys, ok := f.mi.fsys.(RemoveFS); ok {
 		err := fsys.Remove(f.name)
 		if err != nil {
-			return STATUS_ACCESS_DENINED
+			return STATUS_ACCESS_DENIED
 		}
 	}
-	return STATUS_ACCESS_DENINED
+	return STATUS_ACCESS_DENIED
 })
 
 var closeFile = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("CloseFile: not opened?")
-		return STATUS_ACCESS_DENINED
+		return STATUS_INVALID_PARAMETER
 	}
 	f.Close()
 	finfo.Context = 0
@@ -484,7 +493,7 @@ var deleteFile = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) u
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("DeleteFile: not opened?")
-		return STATUS_ACCESS_DENINED
+		return STATUS_INVALID_PARAMETER
 	}
 	return STATUS_SUCCESS
 })
@@ -493,7 +502,7 @@ var deleteDir = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) ui
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("DeleteDir: not opened?")
-		return STATUS_ACCESS_DENINED
+		return STATUS_INVALID_PARAMETER
 	}
 	return STATUS_SUCCESS
 })
@@ -502,7 +511,7 @@ var moveFile = syscall.NewCallback(func(pname *uint16, pNewName *uint16, replace
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("MoveFile: not opened?")
-		return STATUS_ACCESS_DENINED
+		return STATUS_INVALID_PARAMETER
 	}
 
 	fsys, ok := f.mi.fsys.(RenameFS)
@@ -519,7 +528,7 @@ var moveFile = syscall.NewCallback(func(pname *uint16, pNewName *uint16, replace
 	f.stat = nil
 	err := fsys.Rename(f.name, name)
 	if err != nil {
-		return STATUS_ACCESS_DENINED
+		return STATUS_ACCESS_DENIED
 	}
 
 	return STATUS_SUCCESS
@@ -529,7 +538,7 @@ var setEndOfFile = syscall.NewCallback(func(pname *uint16, offset int64, finfo *
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("SetEndOfFile: not opened?")
-		return STATUS_ACCESS_DENINED
+		return STATUS_INVALID_PARAMETER
 	}
 
 	if fsys, ok := f.mi.fsys.(interface {
@@ -537,9 +546,8 @@ var setEndOfFile = syscall.NewCallback(func(pname *uint16, offset int64, finfo *
 	}); ok {
 		f.stat = nil
 		err := fsys.Truncate(f.name, offset)
-		log.Println("Truncate ", f.name, offset, err, f.file)
 		if err != nil {
-			return STATUS_ACCESS_DENINED
+			return STATUS_ACCESS_DENIED
 		}
 	}
 	return STATUS_SUCCESS
