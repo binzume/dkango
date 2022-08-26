@@ -17,7 +17,7 @@ func TestMountFS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 0 {
+	if len(n) != 0 {
 		t.Error("mount points != 0: ", n)
 	}
 
@@ -31,7 +31,7 @@ func TestMountFS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
+	if len(n) != 1 {
 		t.Error("mount points != 1: ", n)
 	}
 
@@ -108,7 +108,12 @@ func (fsys *testWritableFs) Mkdir(name string, mode fs.FileMode) error {
 	return os.Mkdir(path.Join(fsys.path, name), mode)
 }
 
+func (fsys *testWritableFs) Rename(name, newName string) error {
+	return os.Rename(path.Join(fsys.path, name), path.Join(fsys.path, newName))
+}
+
 func TestWritableFS(t *testing.T) {
+	OptionFlags = DOKAN_OPTION_ALT_STREAM | DOKAN_OPTION_DEBUG | DOKAN_OPTION_STDERR
 
 	mount, err := MountFS(mountPoint, &testWritableFs{FS: os.DirFS(srcDir), path: srcDir}, nil)
 	if err != nil {
@@ -119,6 +124,7 @@ func TestWritableFS(t *testing.T) {
 	fname := mountPoint + "\\output.txt"
 
 	_ = os.Remove(fname)
+	_ = os.Remove(fname + ".renamed")
 
 	f, err := os.Create(fname)
 	if err != nil {
@@ -139,7 +145,17 @@ func TestWritableFS(t *testing.T) {
 		t.Fatal("Close() error", err)
 	}
 
-	err = os.Remove(fname)
+	err = os.Truncate(fname, 1)
+	if err != nil {
+		t.Error("Truncate() error", err)
+	}
+
+	err = os.Rename(fname, fname+".renamed")
+	if err != nil {
+		t.Fatal("Remove() error", err)
+	}
+
+	err = os.Remove(fname + ".renamed")
 	if err != nil {
 		t.Fatal("Remove() error", err)
 	}

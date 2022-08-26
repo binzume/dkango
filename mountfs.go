@@ -19,19 +19,32 @@ var OptionFlags uint32 = DOKAN_OPTION_ALT_STREAM // | DOKAN_OPTION_DEBUG | DOKAN
 const UnixTimeOffset = 116444736000000000
 
 type WritableFS interface {
-	fs.FS
-	OpenWriter(name string, flag int) (io.WriteCloser, error)
+	OpenWriterFS
 	Truncate(name string, size int64) error
 }
 
-type RemoveFS interface {
+type OpenWriterFS interface {
 	fs.FS
+	OpenWriter(name string, flag int) (io.WriteCloser, error)
+}
+
+type RemoveFS interface {
 	Remove(name string) error
+}
+
+type RenameFS interface {
+	fs.FS
+	Rename(name string, newName string) error
 }
 
 type MkdirFS interface {
 	fs.FS
-	Mkdir(name string, ignored fs.FileMode) error
+	Mkdir(name string, mode fs.FileMode) error
+}
+
+type OpenDirFS interface {
+	fs.FS
+	OpenDir(name string) (fs.ReadDirFile, error)
 }
 
 type MountOptions struct {
@@ -125,12 +138,12 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, erro
 		return nil, err
 	}
 	mi.mounted.Add(1)
-	path := unsafe.Pointer(syscall.StringToUTF16Ptr(mountPoint))
+	path := syscall.StringToUTF16Ptr(mountPoint)
 	options := &DokanOptions{
 		Version:       205,
 		GlobalContext: uint64(uintptr(unsafe.Pointer(mi))),
 		// SingleThread:  1,
-		MountPoint: uintptr(path),
+		MountPoint: uintptr(unsafe.Pointer(path)),
 		Options:    OptionFlags,
 	}
 	operations := &DokanOperations{
@@ -143,18 +156,18 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, erro
 		// FlushFileBuffers:   debugCallback,
 		GetFileInformation: getFileInformation,
 		FindFiles:          findFiles,
-		//FindFilesWithPattern: debugCallback,
-		//SetFileAttributes:    debugCallback,
-		//SetFileTime:          debugCallback,
-		DeleteFile:      deleteFile,
-		DeleteDirectory: deleteDir,
-		//MoveFile:             debugCallback,
-		//SetEndOfFile:         debugCallback,
-		//SetAllocationSize:    debugCallback,
-		//LockFile:             debugCallback,
-		//UnlockFile:           debugCallback,
-		//GetFileSecurity:      debugCallback,
-		//SetFileSecurity:      debugCallback,
+		// FindFilesWithPattern: debugCallback,
+		// SetFileAttributes:    debugCallback,
+		// SetFileTime:          debugCallback,
+		DeleteFile:        deleteFile,
+		DeleteDirectory:   deleteDir,
+		MoveFile:          moveFile,
+		SetEndOfFile:      setEndOfFile,
+		SetAllocationSize: setEndOfFile,
+		// LockFile:             debugCallback,
+		// UnlockFile:           debugCallback,
+		// GetFileSecurity:      debugCallback,
+		// SetFileSecurity:      debugCallback,
 		GetDiskFreeSpace:     getDiskFreeSpace,
 		GetVolumeInformation: getVolumeInformation,
 		Unmounted:            unmounted,
@@ -181,10 +194,12 @@ func (mi *MountInfo) Close() error {
 }
 
 func getMountInfo(finfo *DokanFileInfo) *MountInfo {
+	// TODO: Fix: possible misuse of unsafe.Pointer
 	return (*MountInfo)(unsafe.Pointer(uintptr(finfo.DokanOptions.GlobalContext)))
 }
 
 func getOpenedFile(finfo *DokanFileInfo) *openedFile {
+	// TODO: Fix: possible misuse of unsafe.Pointer
 	return (*openedFile)(unsafe.Pointer(uintptr(finfo.Context)))
 }
 
@@ -258,9 +273,7 @@ var zwCreateFile = syscall.NewCallback(func(pname *uint16, secCtx uintptr, acces
 		}
 	}
 	if access&FILE_WRITE_DATA != 0 {
-		_, ok := mi.fsys.(interface {
-			OpenWriter(string, int) (io.WriteCloser, error)
-		})
+		_, ok := mi.fsys.(OpenWriterFS)
 		if !ok {
 			// Read only FS
 			return STATUS_ACCESS_DENINED
@@ -291,30 +304,51 @@ var findFiles = syscall.NewCallback(func(pname *uint16, fillFindData uintptr, fi
 		f.name = "."
 	}
 
-	files, err := fs.ReadDir(f.mi.fsys, f.name)
-	if err != nil {
-		log.Println("ReadDIR", f.name, err)
-		return STATUS_ACCESS_DENINED
+	proc := func(files []fs.DirEntry) bool {
+		for _, file := range files {
+			fi := WIN32_FIND_DATAW{}
+			copy(fi.FileName[:], syscall.StringToUTF16(file.Name()))
+			if file.IsDir() {
+				fi.FileAttributes = FILE_ATTRIBUTE_DIRECTORY
+			} else {
+				fi.FileAttributes = FILE_ATTRIBUTE_NORMAL
+			}
+			info, err := file.Info()
+			if err == nil {
+				fi.FileSizeLow = uint32(info.Size())
+				fi.FileSizeHigh = uint32(info.Size() >> 32)
+				t := (info.ModTime().UnixNano())/100 + UnixTimeOffset
+				fi.LastWriteTime[0] = uint32(t)
+				fi.LastWriteTime[1] = uint32(t >> 32)
+				fi.LastAccessTime = fi.LastWriteTime
+				fi.CreationTime = fi.LastWriteTime
+			}
+			ret, _, errNo := syscall.SyscallN(fillFindData, uintptr(unsafe.Pointer(&fi)), uintptr(unsafe.Pointer(finfo)))
+			if errNo != 0 || ret == 1 {
+				return false
+			}
+		}
+		return true
 	}
-	for _, file := range files {
-		fi := WIN32_FIND_DATAW{}
-		copy(fi.FileName[:], syscall.StringToUTF16(file.Name()))
-		if file.IsDir() {
-			fi.FileAttributes = FILE_ATTRIBUTE_DIRECTORY
-		} else {
-			fi.FileAttributes = FILE_ATTRIBUTE_NORMAL
+
+	if fsys, ok := f.mi.fsys.(OpenDirFS); ok {
+		r, err := fsys.OpenDir(f.name)
+		if err != nil {
+			log.Println("OpenDir()", f.name, err)
+			return STATUS_ACCESS_DENINED
 		}
-		info, err := file.Info()
-		if err == nil {
-			fi.FileSizeLow = uint32(info.Size())
-			fi.FileSizeHigh = uint32(info.Size() >> 32)
-			t := (info.ModTime().UnixNano())/100 + UnixTimeOffset
-			fi.LastWriteTime[0] = uint32(t)
-			fi.LastWriteTime[1] = uint32(t >> 32)
-			fi.LastAccessTime = fi.LastWriteTime
-			fi.CreationTime = fi.LastWriteTime
+		for {
+			if files, _ := r.ReadDir(256); len(files) == 0 || !proc(files) {
+				break
+			}
 		}
-		syscall.SyscallN(fillFindData, uintptr(unsafe.Pointer(&fi)), uintptr(unsafe.Pointer(finfo)))
+	} else {
+		files, err := fs.ReadDir(f.mi.fsys, f.name)
+		if err != nil {
+			log.Println("ReadDir()", f.name, err)
+			return STATUS_ACCESS_DENINED
+		}
+		proc(files)
 	}
 
 	return STATUS_SUCCESS
@@ -390,9 +424,7 @@ var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, wri
 		return STATUS_ACCESS_DENINED
 	}
 
-	fsys, ok := f.mi.fsys.(interface {
-		OpenWriter(string, int) (io.WriteCloser, error)
-	})
+	fsys, ok := f.mi.fsys.(OpenWriterFS)
 	if !ok {
 		log.Println("WriteFile: not support OpenWriter?")
 		return STATUS_NOT_SUPPORTED
@@ -462,6 +494,53 @@ var deleteDir = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) ui
 	if f == nil {
 		log.Println("DeleteDir: not opened?")
 		return STATUS_ACCESS_DENINED
+	}
+	return STATUS_SUCCESS
+})
+
+var moveFile = syscall.NewCallback(func(pname *uint16, pNewName *uint16, replaceIfExisting bool, finfo *DokanFileInfo) uintptr {
+	f := getOpenedFile(finfo)
+	if f == nil {
+		log.Println("MoveFile: not opened?")
+		return STATUS_ACCESS_DENINED
+	}
+
+	fsys, ok := f.mi.fsys.(RenameFS)
+	if !ok {
+		log.Println("MoveFIle: not support Rename()?")
+		return STATUS_NOT_SUPPORTED
+	}
+
+	name := syscall.UTF16ToString(unsafe.Slice(pNewName, 260))
+	name = strings.TrimPrefix(filepath.ToSlash(name), "/")
+	if name == "" {
+		name = "."
+	}
+	f.stat = nil
+	err := fsys.Rename(f.name, name)
+	if err != nil {
+		return STATUS_ACCESS_DENINED
+	}
+
+	return STATUS_SUCCESS
+})
+
+var setEndOfFile = syscall.NewCallback(func(pname *uint16, offset int64, finfo *DokanFileInfo) uintptr {
+	f := getOpenedFile(finfo)
+	if f == nil {
+		log.Println("SetEndOfFile: not opened?")
+		return STATUS_ACCESS_DENINED
+	}
+
+	if fsys, ok := f.mi.fsys.(interface {
+		Truncate(string, int64) error
+	}); ok {
+		f.stat = nil
+		err := fsys.Truncate(f.name, offset)
+		log.Println("Truncate ", f.name, offset, err, f.file)
+		if err != nil {
+			return STATUS_ACCESS_DENINED
+		}
 	}
 	return STATUS_SUCCESS
 })

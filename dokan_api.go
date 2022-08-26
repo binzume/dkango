@@ -45,8 +45,6 @@ const (
 	FILE_ATTRIBUTE_DIRECTORY = 16
 	FILE_ATTRIBUTE_ARCHIVE   = 32
 	FILE_ATTRIBUTE_NORMAL    = 128
-
-	FILE_FLAG_DELETE_ON_CLOSE = 0x04000000
 )
 
 // ZwCreateFile options
@@ -80,6 +78,15 @@ const (
 )
 
 type MountPointInfo struct {
+	Type         uint32
+	MountPoint   string
+	UNCName      string
+	DeviceName   string
+	SessionID    uint32
+	MountOptions uint32
+}
+
+type nativeMountPointInfo struct {
 	Type         uint32
 	MountPoint   [MAX_PATH]uint16
 	UNCName      [64]uint16
@@ -239,16 +246,28 @@ func Shutdown() error {
 	return convErr(err)
 }
 
-func MountPoints() (uint32, error) {
+func MountPoints() ([]*MountPointInfo, error) {
 	var n uint32
 	ret, _, err := syscall.SyscallN(dokanGetMountPointList.Addr(), uintptr(0), uintptr(unsafe.Pointer(&n)))
 	if err != 0 {
-		return 0, convErr(err)
+		return nil, convErr(err)
+	}
+
+	var mps []*MountPointInfo
+	// TODO: Fix: possible misuse of unsafe.Pointer
+	for _, mp := range unsafe.Slice((*nativeMountPointInfo)(unsafe.Pointer(ret)), n) {
+		mps = append(mps, &MountPointInfo{
+			Type:         mp.Type,
+			MountPoint:   syscall.UTF16ToString(mp.MountPoint[:]),
+			UNCName:      syscall.UTF16ToString(mp.UNCName[:]),
+			DeviceName:   syscall.UTF16ToString(mp.DeviceName[:]),
+			SessionID:    mp.Type,
+			MountOptions: mp.MountOptions,
+		})
 	}
 
 	syscall.SyscallN(dokanReleaseMountPointList.Addr(), ret)
-
-	return n, convErr(err)
+	return mps, convErr(err)
 }
 
 func CreateFileSystem(options *DokanOptions, operations *DokanOperations) (uintptr, error) {
