@@ -32,7 +32,13 @@ func main() {
 }
 ```
 
-### need writable FS?
+### How to create a writable FS?
+
+See examples/writable/writable.go
+
+```
+go run ./examples/writable testdir R:
+```
 
 ```go
 type WritableFS interface {
@@ -42,11 +48,13 @@ type WritableFS interface {
 }
 ```
 
-See examples/writable/writable.go
+Other interfaces such as RemoveFS, MkdirFS, RenameFS... are also available.
 
-```
-go run ./examples/writable testdir R:
-```
+
+## TODO
+
+- Notify event
+- Performance
 
 ## License
 
