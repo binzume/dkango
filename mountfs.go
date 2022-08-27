@@ -203,6 +203,17 @@ func getOpenedFile(finfo *DokanFileInfo) *openedFile {
 	return (*openedFile)(unsafe.Pointer(uintptr(finfo.Context)))
 }
 
+func errToStatus(err error) uintptr {
+	if err == nil {
+		return STATUS_SUCCESS
+	} else if errors.Is(err, fs.ErrNotExist) {
+		return STATUS_OBJECT_NAME_NOT_FOUND
+	} else if err == io.EOF || errors.Is(err, io.ErrUnexpectedEOF) {
+		return STATUS_END_OF_FILE
+	}
+	return STATUS_ACCESS_DENIED
+}
+
 var debugCallback = syscall.NewCallback(func(param uintptr) uintptr {
 	log.Println("debugCallback", param)
 	return STATUS_ACCESS_DENIED
@@ -263,7 +274,7 @@ var zwCreateFile = syscall.NewCallback(func(pname *uint16, secCtx uintptr, acces
 
 	stat, err := fs.Stat(mi.fsys, name)
 	if !(create && errors.Is(err, fs.ErrNotExist)) && err != nil {
-		return STATUS_OBJECT_NAME_NOT_FOUND
+		return errToStatus(err)
 	}
 	if disposition == FILE_CREATE && options&FILE_DIRECTORY_FILE != 0 {
 		if fsys, ok := mi.fsys.(MkdirFS); ok {
@@ -338,8 +349,7 @@ func findFiles(pname *uint16, fillFindData uintptr, finfo *DokanFileInfo) uintpt
 	if fsys, ok := f.mi.fsys.(OpenDirFS); ok {
 		r, err := fsys.OpenDir(f.name)
 		if err != nil {
-			log.Println("OpenDir()", f.name, err)
-			return STATUS_ACCESS_DENIED
+			return errToStatus(err)
 		}
 		for {
 			if files, _ := r.ReadDir(256); len(files) == 0 || !proc(files) {
@@ -348,13 +358,9 @@ func findFiles(pname *uint16, fillFindData uintptr, finfo *DokanFileInfo) uintpt
 		}
 	} else {
 		files, err := fs.ReadDir(f.mi.fsys, f.name)
-		if err != nil {
-			log.Println("ReadDir()", f.name, err)
-			return STATUS_ACCESS_DENIED
-		}
 		proc(files)
+		return errToStatus(err)
 	}
-
 	return STATUS_SUCCESS
 }
 
@@ -406,7 +412,7 @@ var readFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, read
 	if f.file == nil {
 		r, err := f.mi.fsys.Open(f.name)
 		if err != nil {
-			return STATUS_ACCESS_DENIED
+			return errToStatus(err)
 		}
 		f.file = r
 	}
@@ -414,14 +420,10 @@ var readFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, read
 	if r, ok := f.file.(io.ReaderAt); ok {
 		n, err := r.ReadAt(unsafe.Slice(buf, sz), offset)
 		*read = int32(n)
-		if n == 0 {
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				return STATUS_END_OF_FILE
-			} else {
-				return STATUS_ACCESS_DENIED
-			}
+		if n > 0 {
+			return STATUS_SUCCESS // ignore EOF error
 		}
-		return STATUS_SUCCESS
+		return errToStatus(err)
 	}
 	return STATUS_ACCESS_DENIED
 })
@@ -443,7 +445,7 @@ var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, wri
 	if f.file == nil {
 		r, err := fsys.OpenWriter(f.name, syscall.O_RDWR|syscall.O_CREAT)
 		if err != nil {
-			return STATUS_ACCESS_DENIED
+			return errToStatus(err)
 		}
 		f.file = r
 	}
@@ -451,12 +453,9 @@ var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, wri
 	if w, ok := f.file.(io.WriterAt); ok {
 		n, err := w.WriteAt(unsafe.Slice(buf, sz), offset)
 		*written = int32(n)
-		if errors.Is(err, io.EOF) {
-			return STATUS_END_OF_FILE
-		}
-		return STATUS_SUCCESS
+		return errToStatus(err)
 	}
-	return STATUS_ACCESS_DENIED
+	return STATUS_NOT_SUPPORTED
 })
 
 var cleanup = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) uintptr {
@@ -470,12 +469,9 @@ var cleanup = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) uint
 		return STATUS_SUCCESS
 	}
 	if fsys, ok := f.mi.fsys.(RemoveFS); ok {
-		err := fsys.Remove(f.name)
-		if err != nil {
-			return STATUS_ACCESS_DENIED
-		}
+		return errToStatus(fsys.Remove(f.name))
 	}
-	return STATUS_ACCESS_DENIED
+	return STATUS_NOT_SUPPORTED
 })
 
 var closeFile = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) uintptr {
@@ -526,12 +522,7 @@ var moveFile = syscall.NewCallback(func(pname *uint16, pNewName *uint16, replace
 		name = "."
 	}
 	f.stat = nil
-	err := fsys.Rename(f.name, name)
-	if err != nil {
-		return STATUS_ACCESS_DENIED
-	}
-
-	return STATUS_SUCCESS
+	return errToStatus(fsys.Rename(f.name, name))
 })
 
 var setEndOfFile = syscall.NewCallback(func(pname *uint16, offset int64, finfo *DokanFileInfo) uintptr {
@@ -545,10 +536,7 @@ var setEndOfFile = syscall.NewCallback(func(pname *uint16, offset int64, finfo *
 		Truncate(string, int64) error
 	}); ok {
 		f.stat = nil
-		err := fsys.Truncate(f.name, offset)
-		if err != nil {
-			return STATUS_ACCESS_DENIED
-		}
+		return errToStatus(fsys.Truncate(f.name, offset))
 	}
-	return STATUS_SUCCESS
+	return STATUS_NOT_SUPPORTED
 })
