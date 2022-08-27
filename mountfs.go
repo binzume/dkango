@@ -89,6 +89,7 @@ type openedFile struct {
 	name string
 	file io.Closer
 	stat fs.FileInfo
+	pos  int64
 }
 
 func (f *openedFile) Close() {
@@ -416,16 +417,34 @@ var readFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, read
 		}
 		f.file = r
 	}
-
-	if r, ok := f.file.(io.ReaderAt); ok {
-		n, err := r.ReadAt(unsafe.Slice(buf, sz), offset)
+	if f.pos != offset {
+		if seeker, ok := f.file.(io.Seeker); ok {
+			_, err := seeker.Seek(offset, io.SeekStart)
+			if err != nil {
+				return errToStatus(err)
+			}
+		} else if r, ok := f.file.(io.ReaderAt); ok {
+			n, err := r.ReadAt(unsafe.Slice(buf, sz), offset)
+			f.pos = -1
+			*read = int32(n)
+			if n > 0 {
+				return STATUS_SUCCESS // ignore EOF error
+			}
+			return errToStatus(err)
+		} else {
+			return STATUS_NOT_SUPPORTED
+		}
+	}
+	if r, ok := f.file.(io.Reader); ok {
+		n, err := r.Read(unsafe.Slice(buf, sz))
+		f.pos = offset + int64(n)
 		*read = int32(n)
 		if n > 0 {
 			return STATUS_SUCCESS // ignore EOF error
 		}
 		return errToStatus(err)
 	}
-	return STATUS_ACCESS_DENIED
+	return STATUS_NOT_SUPPORTED
 })
 
 var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, written *int32, offset int64, finfo *DokanFileInfo) uintptr {
@@ -440,7 +459,6 @@ var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, wri
 		log.Println("WriteFile: not support OpenWriter?")
 		return STATUS_NOT_SUPPORTED
 	}
-	f.stat = nil // invalidate cached stat
 
 	if f.file == nil {
 		r, err := fsys.OpenWriter(f.name, syscall.O_RDWR|syscall.O_CREAT)
@@ -450,8 +468,25 @@ var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, wri
 		f.file = r
 	}
 
-	if w, ok := f.file.(io.WriterAt); ok {
-		n, err := w.WriteAt(unsafe.Slice(buf, sz), offset)
+	if f.pos != offset {
+		if seeker, ok := f.file.(io.Seeker); ok {
+			_, err := seeker.Seek(offset, io.SeekStart)
+			if err != nil {
+				return errToStatus(err)
+			}
+		} else if w, ok := f.file.(io.WriterAt); ok {
+			f.stat = nil // invalidate cached stat
+			f.pos = -1   // TODO
+			n, err := w.WriteAt(unsafe.Slice(buf, sz), offset)
+			*written = int32(n)
+			return errToStatus(err)
+		} else {
+			return STATUS_NOT_SUPPORTED
+		}
+	}
+	if r, ok := f.file.(io.Writer); ok {
+		n, err := r.Write(unsafe.Slice(buf, sz))
+		f.pos = offset + int64(n)
 		*written = int32(n)
 		return errToStatus(err)
 	}

@@ -58,8 +58,13 @@ func TestMountFS(t *testing.T) {
 		t.Error("Write() shoudl be failed")
 	}
 
-	buf := make([]byte, 100)
+	buf := make([]byte, 32)
 	_, err = r.Read(buf)
+	if err != nil {
+		t.Error("Read() error", err)
+	}
+
+	_, err = r.ReadAt(buf, 8)
 	if err != nil {
 		t.Error("Read() error", err)
 	}
@@ -140,13 +145,18 @@ func TestWritableFS(t *testing.T) {
 		t.Fatal("Create() error", err)
 	}
 
-	_, err = f.Write([]byte("Hello, FUSE!\n"))
+	_, err = f.Write([]byte("hello, FUSE!\n"))
 	if err != nil {
 		t.Fatal("Write() error", err)
 	}
 	_, err = f.Write([]byte("1234567890"))
 	if err != nil {
 		t.Fatal("Write() error", err)
+	}
+
+	_, err = f.WriteAt([]byte("Hello"), 0)
+	if err != nil {
+		t.Fatal("WriteAt() error", err)
 	}
 
 	err = f.Close()
