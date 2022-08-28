@@ -7,13 +7,15 @@ import (
 	"os"
 	"path"
 	"testing"
+
+	"github.com/binzume/dkango/dokan"
 )
 
 const srcDir = "."
 const mountPoint = "X:"
 
 func TestMountFS(t *testing.T) {
-	n, err := MountPoints()
+	n, err := dokan.MountPoints()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +29,7 @@ func TestMountFS(t *testing.T) {
 	}
 	defer mount.Close()
 
-	n, err = MountPoints()
+	n, err = dokan.MountPoints()
 	if err != nil {
 		t.Fatal(err)
 	}
