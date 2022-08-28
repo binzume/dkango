@@ -55,6 +55,7 @@ type MountOptions struct {
 	Serial         uint32
 	TotalBytes     uint64
 	AvailableBytes uint64
+	WriteProtect   bool // Readonly FS even if fsys implements OpenWriterFS.
 }
 
 type MountInfo struct {
@@ -180,6 +181,10 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, erro
 	if err == nil {
 		mountPoint = full
 	}
+	var ro uint32
+	if opt.WriteProtect {
+		ro = dokan.DOKAN_OPTION_WRITE_PROTECT
+	}
 	mi.mounted.Add(1)
 	path := syscall.StringToUTF16Ptr(mountPoint)
 	options := &dokan.DokanOptions{
@@ -187,7 +192,7 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, erro
 		GlobalContext: unsafe.Pointer(mi),
 		// SingleThread:  1,
 		MountPoint: uintptr(unsafe.Pointer(path)),
-		Options:    OptionFlags,
+		Options:    OptionFlags | ro,
 	}
 	operations := &dokan.DokanOperations{
 		ZwCreateFile: zwCreateFile,

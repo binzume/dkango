@@ -57,7 +57,7 @@ func TestMountFS(t *testing.T) {
 
 	_, err = r.Write([]byte("Test"))
 	if err == nil {
-		t.Error("Write() shoudl be failed")
+		t.Error("Write() should be failed")
 	}
 
 	buf := make([]byte, 32)
@@ -78,12 +78,12 @@ func TestMountFS(t *testing.T) {
 
 	r, err = os.Open(mountPoint + "/notfound")
 	if !errors.Is(err, fs.ErrNotExist) {
-		t.Error("Open() for not exitst file shoudl be failed.", err)
+		t.Error("Open() for not exitst file should be failed.", err)
 	}
 
 	r, err = os.OpenFile(mountPoint+"/notfound", os.O_CREATE|os.O_WRONLY, 0)
 	if !errors.Is(err, fs.ErrPermission) {
-		t.Error("OpenFile() wtih O_CREATE shoudl be failed.", err)
+		t.Error("OpenFile() wtih O_CREATE should be failed.", err)
 	}
 
 	b, err := os.ReadFile(fname)
@@ -120,7 +120,7 @@ func (fsys *testWritableFs) Rename(name, newName string) error {
 }
 
 func TestWritableFS(t *testing.T) {
-	// OptionFlags = DOKAN_OPTION_ALT_STREAM | DOKAN_OPTION_DEBUG | DOKAN_OPTION_STDERR
+	// OptionFlags = dokan.DOKAN_OPTION_ALT_STREAM | dokan.DOKAN_OPTION_DEBUG | dokan.DOKAN_OPTION_STDERR
 	mount, err := MountFS(mountPoint, &testWritableFs{FS: os.DirFS(srcDir), path: srcDir}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -250,7 +250,7 @@ func TestWritableFS(t *testing.T) {
 }
 
 func TestNotify(t *testing.T) {
-	OptionFlags = dokan.DOKAN_OPTION_ALT_STREAM | dokan.DOKAN_OPTION_DEBUG | dokan.DOKAN_OPTION_STDERR
+	// OptionFlags = dokan.DOKAN_OPTION_ALT_STREAM | dokan.DOKAN_OPTION_DEBUG | dokan.DOKAN_OPTION_STDERR
 	mount, err := MountFS(mountPoint, &testWritableFs{FS: os.DirFS(srcDir), path: srcDir}, nil)
 	if err != nil {
 		t.Fatal(err)
