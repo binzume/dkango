@@ -1,4 +1,7 @@
 # Dokan bindings for Go
+[![Build Status](https://github.com/binzume/dkango/actions/workflows/test.yaml/badge.svg)](https://github.com/binzume/dkango/actions)
+[![Go Reference](https://pkg.go.dev/badge/github.com/binzume/dkango.svg)](https://pkg.go.dev/github.com/binzume/dkango)
+[![license](https://img.shields.io/badge/license-MIT-4183c4.svg)](https://github.com/binzume/dkango/blob/master/LICENSE)
 
 Dokan: https://ja.wikipedia.org/wiki/Dokan
 
@@ -48,6 +51,10 @@ type OpenWriterFS interface {
 ```
 
 Other interfaces such as RemoveFS, MkdirFS, RenameFS... are also available.
+
+### Cross platform?
+
+See https://github.com/binzume/fsmount
 
 ## TODO
 
