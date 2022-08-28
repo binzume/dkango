@@ -41,15 +41,13 @@ go run ./examples/writable testdir R:
 ```
 
 ```go
-type WritableFS interface {
+type OpenWriterFS interface {
 	fs.FS
 	OpenWriter(name string, flag int) (io.WriteCloser, error)
-	Truncate(name string, size int64) error
 }
 ```
 
 Other interfaces such as RemoveFS, MkdirFS, RenameFS... are also available.
-
 
 ## TODO
 

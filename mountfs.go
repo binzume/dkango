@@ -18,11 +18,6 @@ var OptionFlags uint32 = DOKAN_OPTION_ALT_STREAM // | DOKAN_OPTION_DEBUG | DOKAN
 // UnixTime epoch from 16001-01-01 (UTC) in 0.1us.
 const UnixTimeOffset = 116444736000000000
 
-type WritableFS interface {
-	OpenWriterFS
-	Truncate(name string, size int64) error
-}
-
 type OpenWriterFS interface {
 	fs.FS
 	OpenWriter(name string, flag int) (io.WriteCloser, error)
@@ -45,6 +40,11 @@ type MkdirFS interface {
 type OpenDirFS interface {
 	fs.FS
 	OpenDir(name string) (fs.ReadDirFile, error)
+}
+
+type TruncateFS interface {
+	fs.FS
+	Truncate(name string, size int64) error
 }
 
 type MountOptions struct {
@@ -601,20 +601,12 @@ var setEndOfFile = syscall.NewCallback(func(pname *uint16, offset int64, finfo *
 		return STATUS_INVALID_PARAMETER
 	}
 
-	if fsys, ok := f.mi.fsys.(interface {
-		Truncate(string, int64) error
-	}); ok {
+	if trunc, ok := f.file.(interface{ Truncate(int64) error }); ok {
+		f.cachedStat = nil
+		return errToStatus(trunc.Truncate(offset))
+	} else if fsys, ok := f.mi.fsys.(TruncateFS); ok {
 		f.cachedStat = nil
 		return errToStatus(fsys.Truncate(f.name, offset))
-	} else if fsys, ok := f.mi.fsys.(OpenWriterFS); ok {
-		f, err := fsys.OpenWriter(f.name, syscall.O_WRONLY|syscall.O_CREAT)
-		if err != nil {
-			return errToStatus(err)
-		}
-		defer f.Close()
-		if trunc, ok := f.(interface{ Truncate(int64) error }); ok {
-			return errToStatus(trunc.Truncate(offset))
-		}
 	}
 	return STATUS_NOT_SUPPORTED
 })
