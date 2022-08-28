@@ -26,6 +26,7 @@ type OpenWriterFS interface {
 }
 
 type RemoveFS interface {
+	fs.FS
 	Remove(name string) error
 }
 
@@ -65,7 +66,6 @@ type MountInfo struct {
 	openedFiles map[*openedFile]struct{}
 	mounted     sync.WaitGroup
 	lock        sync.Mutex
-	operations  *dokan.DokanOperations
 	options     *dokan.DokanOptions
 }
 
@@ -141,6 +141,7 @@ func (f *openedFile) Close() {
 // keep instances to prevent from GC
 var instances = map[*MountInfo]struct{}{}
 var instancesLock sync.Mutex
+var dokanOperations *dokan.DokanOperations
 
 func registerInstance(mi *MountInfo) error {
 	instancesLock.Lock()
@@ -161,6 +162,41 @@ func unregisterInstance(mi *MountInfo) {
 	if len(instances) == 0 {
 		_ = dokan.Shutdown()
 	}
+}
+
+func ensureDokanOperations() *dokan.DokanOperations {
+	instancesLock.Lock()
+	defer instancesLock.Unlock()
+	if dokanOperations == nil {
+		dokanOperations = &dokan.DokanOperations{
+			ZwCreateFile: syscall.NewCallback(zwCreateFile),
+			Cleanup:      syscall.NewCallback(cleanup),
+			CloseFile:    syscall.NewCallback(closeFile),
+			ReadFile:     syscall.NewCallback(readFile),
+			WriteFile:    syscall.NewCallback(writeFile),
+			// FlushFileBuffers:   debugCallback,
+			GetFileInformation: syscall.NewCallback(getFileInformation),
+			FindFiles:          syscall.NewCallback(findFiles),
+			// FindFilesWithPattern: debugCallback,
+			// SetFileAttributes:    debugCallback,
+			// SetFileTime:          debugCallback,
+			DeleteFile:        syscall.NewCallback(deleteFile),
+			DeleteDirectory:   syscall.NewCallback(deleteDir),
+			MoveFile:          syscall.NewCallback(moveFile),
+			SetEndOfFile:      syscall.NewCallback(setEndOfFile),
+			SetAllocationSize: syscall.NewCallback(setEndOfFile),
+			// LockFile:             debugCallback,
+			// UnlockFile:           debugCallback,
+			// GetFileSecurity:      debugCallback,
+			// SetFileSecurity:      debugCallback,
+			GetDiskFreeSpace:     syscall.NewCallback(getDiskFreeSpace),
+			GetVolumeInformation: syscall.NewCallback(getVolumeInformation),
+			Mounted:              syscall.NewCallback(mounted),
+			Unmounted:            syscall.NewCallback(unmounted),
+			// FindStreams:          debugCallback,
+		}
+	}
+	return dokanOperations
 }
 
 // MountFS mounts fsys on mountPoint.
@@ -194,43 +230,14 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, erro
 		MountPoint: uintptr(unsafe.Pointer(path)),
 		Options:    OptionFlags | ro,
 	}
-	operations := &dokan.DokanOperations{
-		ZwCreateFile: zwCreateFile,
-		Cleanup:      cleanup,
-		CloseFile:    closeFile,
-		ReadFile:     readFile,
-		WriteFile:    writeFile,
 
-		// FlushFileBuffers:   debugCallback,
-		GetFileInformation: getFileInformation,
-		FindFiles:          syscall.NewCallback(findFiles),
-		// FindFilesWithPattern: syscall.NewCallback(findFilesWithPattern),
-		// SetFileAttributes:    debugCallback,
-		// SetFileTime:          debugCallback,
-		DeleteFile:        deleteFile,
-		DeleteDirectory:   deleteDir,
-		MoveFile:          moveFile,
-		SetEndOfFile:      setEndOfFile,
-		SetAllocationSize: setEndOfFile,
-		// LockFile:             debugCallback,
-		// UnlockFile:           debugCallback,
-		// GetFileSecurity:      debugCallback,
-		// SetFileSecurity:      debugCallback,
-		GetDiskFreeSpace:     getDiskFreeSpace,
-		GetVolumeInformation: getVolumeInformation,
-		Unmounted:            unmounted,
-		// FindStreams:          debugCallback,
-		Mounted: mounted,
-	}
-
-	instance, err := dokan.CreateFileSystem(options, operations)
+	instance, err := dokan.CreateFileSystem(options, ensureDokanOperations())
 	if err != nil {
 		unregisterInstance(mi)
 		return nil, err
 	}
 	mi.instance = instance
 	mi.options = options
-	mi.operations = operations
 	mi.mounted.Wait()
 	return mi, nil
 }
@@ -243,15 +250,15 @@ func getOpenedFile(finfo *dokan.DokanFileInfo) *openedFile {
 	return (*openedFile)(finfo.Context)
 }
 
-var debugCallback = syscall.NewCallback(func(param uintptr) uintptr {
-	log.Println("debugCallback", param)
-	return dokan.STATUS_ACCESS_DENIED
-})
+func debugCallback() uintptr {
+	log.Println("debugCallback")
+	return dokan.STATUS_NOT_SUPPORTED
+}
 
-var getVolumeInformation = syscall.NewCallback(func(pName *uint16, nameSize int32, serial *uint32, maxCLen *uint32, flags *uint32, pSysName *uint16, sysNameSize int32, finfo *dokan.DokanFileInfo) uintptr {
+func getVolumeInformation(pName *uint16, nameSize int32, serial *uint32, maxCLen *uint32, flags *uint32, pSysName *uint16, sysNameSize int32, finfo *dokan.DokanFileInfo) uintptr {
 	dk := getMountInfo(finfo)
 	if dk == nil {
-		return dokan.STATUS_ACCESS_DENIED
+		return dokan.STATUS_INVALID_PARAMETER
 	}
 	copy(unsafe.Slice(pName, nameSize), syscall.StringToUTF16(dk.opt.VolumeName))
 	copy(unsafe.Slice(pSysName, sysNameSize), syscall.StringToUTF16(dk.opt.FileSystemName))
@@ -259,9 +266,9 @@ var getVolumeInformation = syscall.NewCallback(func(pName *uint16, nameSize int3
 	*maxCLen = 256
 	*flags = 0
 	return dokan.STATUS_SUCCESS
-})
+}
 
-var getDiskFreeSpace = syscall.NewCallback(func(availableBytes *uint64, totalBytes *uint64, freeBytes *uint64, finfo *dokan.DokanFileInfo) uintptr {
+func getDiskFreeSpace(availableBytes *uint64, totalBytes *uint64, freeBytes *uint64, finfo *dokan.DokanFileInfo) uintptr {
 	dk := getMountInfo(finfo)
 	if dk == nil {
 		return dokan.STATUS_INVALID_PARAMETER
@@ -271,22 +278,9 @@ var getDiskFreeSpace = syscall.NewCallback(func(availableBytes *uint64, totalByt
 	*totalBytes = dk.opt.TotalBytes
 	*freeBytes = dk.opt.AvailableBytes
 	return dokan.STATUS_SUCCESS
-})
+}
 
-var mounted = syscall.NewCallback(func(mountPoint *uint16, finfo *dokan.DokanFileInfo) uintptr {
-	dk := getMountInfo(finfo)
-	if dk == nil {
-		return dokan.STATUS_INVALID_PARAMETER
-	}
-	dk.mounted.Done()
-	return dokan.STATUS_SUCCESS
-})
-
-var unmounted = syscall.NewCallback(func(finfo *dokan.DokanFileInfo) uintptr {
-	return dokan.STATUS_SUCCESS
-})
-
-var zwCreateFile = syscall.NewCallback(func(pname *uint16, secCtx uintptr, access, attrs, share, disposition, options uint32, finfo *dokan.DokanFileInfo) uintptr {
+func zwCreateFile(pname *uint16, secCtx uintptr, access, attrs, share, disposition, options uint32, finfo *dokan.DokanFileInfo) uintptr {
 	mi := getMountInfo(finfo)
 	if mi == nil {
 		return dokan.STATUS_INVALID_PARAMETER
@@ -373,16 +367,13 @@ var zwCreateFile = syscall.NewCallback(func(pname *uint16, secCtx uintptr, acces
 	finfo.Context = unsafe.Pointer(f)
 
 	return dokan.STATUS_SUCCESS
-})
+}
 
 func findFiles(pname *uint16, fillFindData uintptr, finfo *dokan.DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
-		log.Println("FindFIles not opened?")
+		log.Println("ERROR: FindFiles: not opened file")
 		return dokan.STATUS_INVALID_PARAMETER
-	}
-	if f.name == "" {
-		f.name = "."
 	}
 
 	proc := func(files []fs.DirEntry) bool {
@@ -430,15 +421,10 @@ func findFiles(pname *uint16, fillFindData uintptr, finfo *dokan.DokanFileInfo) 
 	return dokan.STATUS_SUCCESS
 }
 
-func findFilesWithPattern(pname *uint16, pattern *uint16, fillFindData uintptr, finfo *dokan.DokanFileInfo) uintptr {
-	// TODO: pattern
-	return findFiles(pname, fillFindData, finfo)
-}
-
-var getFileInformation = syscall.NewCallback(func(pname *uint16, fi *dokan.ByHandleFileInfo, finfo *dokan.DokanFileInfo) uintptr {
+func getFileInformation(pname *uint16, fi *dokan.ByHandleFileInfo, finfo *dokan.DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
-		log.Println("GetFileInfo: not opened?")
+		log.Println("ERROR: GetFileInformation: not opened file")
 		return dokan.STATUS_INVALID_PARAMETER
 	}
 
@@ -468,12 +454,12 @@ var getFileInformation = syscall.NewCallback(func(pname *uint16, fi *dokan.ByHan
 	fi.VolumeSerialNumber = int32(f.mi.opt.Serial)
 
 	return dokan.STATUS_SUCCESS
-})
+}
 
-var readFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, read *int32, offset int64, finfo *dokan.DokanFileInfo) uintptr {
+func readFile(pname *uint16, buf *byte, sz int32, read *int32, offset int64, finfo *dokan.DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
-		log.Println("ReadFile: not opened?")
+		log.Println("ERROR: ReadFile: not opened file")
 		return dokan.STATUS_INVALID_PARAMETER
 	}
 
@@ -512,12 +498,12 @@ var readFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, read
 		return dokan.ErrorToNTStatus(err)
 	}
 	return dokan.STATUS_NOT_SUPPORTED
-})
+}
 
-var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, written *int32, offset int64, finfo *dokan.DokanFileInfo) uintptr {
+func writeFile(pname *uint16, buf *byte, sz int32, written *int32, offset int64, finfo *dokan.DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
-		log.Println("WriteFile: not opened?")
+		log.Println("ERROR: WriteFile: not opened file")
 		return dokan.STATUS_INVALID_PARAMETER
 	}
 
@@ -549,12 +535,12 @@ var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, wri
 		return dokan.ErrorToNTStatus(err)
 	}
 	return dokan.STATUS_NOT_SUPPORTED
-})
+}
 
-var cleanup = syscall.NewCallback(func(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
+func cleanup(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
-		log.Println("CloseFile: not opened?")
+		log.Println("ERROR: Cleanup: not opened file")
 		return dokan.STATUS_INVALID_PARAMETER
 	}
 
@@ -565,47 +551,47 @@ var cleanup = syscall.NewCallback(func(pname *uint16, finfo *dokan.DokanFileInfo
 		return dokan.ErrorToNTStatus(fsys.Remove(f.name))
 	}
 	return dokan.STATUS_NOT_SUPPORTED
-})
+}
 
-var closeFile = syscall.NewCallback(func(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
+func closeFile(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
-		log.Println("CloseFile: not opened?")
+		log.Println("ERROR: CloseFile: not opened file")
 		return dokan.STATUS_INVALID_PARAMETER
 	}
 	f.Close()
 	finfo.Context = nil
 	return dokan.STATUS_SUCCESS
-})
+}
 
-var deleteFile = syscall.NewCallback(func(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
+func deleteFile(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
-		log.Println("DeleteFile: not opened?")
+		log.Println("ERROR: DeleteFile: not opened file")
 		return dokan.STATUS_INVALID_PARAMETER
 	}
 	return dokan.STATUS_SUCCESS
-})
+}
 
-var deleteDir = syscall.NewCallback(func(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
+func deleteDir(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
-		log.Println("DeleteDir: not opened?")
+		log.Println("ERROR: DeleteDir: not opened file")
 		return dokan.STATUS_INVALID_PARAMETER
 	}
 	return dokan.STATUS_SUCCESS
-})
+}
 
-var moveFile = syscall.NewCallback(func(pname *uint16, pNewName *uint16, replaceIfExisting bool, finfo *dokan.DokanFileInfo) uintptr {
+func moveFile(pname *uint16, pNewName *uint16, replaceIfExisting bool, finfo *dokan.DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
-		log.Println("MoveFile: not opened?")
+		log.Println("ERROR: MoveFile: not opened?")
 		return dokan.STATUS_INVALID_PARAMETER
 	}
 
 	fsys, ok := f.mi.fsys.(RenameFS)
 	if !ok {
-		log.Println("MoveFIle: not support Rename()?")
+		log.Println("WARN: MoveFile: not support Rename()")
 		return dokan.STATUS_NOT_SUPPORTED
 	}
 
@@ -616,12 +602,12 @@ var moveFile = syscall.NewCallback(func(pname *uint16, pNewName *uint16, replace
 	}
 	f.cachedStat = nil
 	return dokan.ErrorToNTStatus(fsys.Rename(f.name, name))
-})
+}
 
-var setEndOfFile = syscall.NewCallback(func(pname *uint16, offset int64, finfo *dokan.DokanFileInfo) uintptr {
+func setEndOfFile(pname *uint16, offset int64, finfo *dokan.DokanFileInfo) uintptr {
 	f := getOpenedFile(finfo)
 	if f == nil {
-		log.Println("SetEndOfFile: not opened?")
+		log.Println("ERROR: SetEndOfFile: not opened?")
 		return dokan.STATUS_INVALID_PARAMETER
 	}
 
@@ -633,4 +619,17 @@ var setEndOfFile = syscall.NewCallback(func(pname *uint16, offset int64, finfo *
 		return dokan.ErrorToNTStatus(fsys.Truncate(f.name, offset))
 	}
 	return dokan.STATUS_NOT_SUPPORTED
-})
+}
+
+func mounted(mountPoint *uint16, finfo *dokan.DokanFileInfo) uintptr {
+	dk := getMountInfo(finfo)
+	if dk == nil {
+		return dokan.STATUS_INVALID_PARAMETER
+	}
+	dk.mounted.Done()
+	return dokan.STATUS_SUCCESS
+}
+
+func unmounted(finfo *dokan.DokanFileInfo) uintptr {
+	return dokan.STATUS_SUCCESS
+}
