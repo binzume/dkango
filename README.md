@@ -58,8 +58,7 @@ See https://github.com/binzume/fsmount
 
 ## TODO
 
-- Notify event
-- Performance
+- Documantation & tests
 
 ## License
 

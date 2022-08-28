@@ -248,3 +248,38 @@ func TestWritableFS(t *testing.T) {
 		t.Fatal("Remove() error", err)
 	}
 }
+
+func TestNotify(t *testing.T) {
+	OptionFlags = dokan.DOKAN_OPTION_ALT_STREAM | dokan.DOKAN_OPTION_DEBUG | dokan.DOKAN_OPTION_STDERR
+	mount, err := MountFS(mountPoint, &testWritableFs{FS: os.DirFS(srcDir), path: srcDir}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mount.Close()
+
+	err = mount.NotifyCreate(mountPoint+"\\aaa", true)
+	if err != nil {
+		t.Fatal("NotifyCreate() error", err)
+	}
+
+	err = mount.NotifyDelete(mountPoint+"\\aaa", true)
+	if err != nil {
+		t.Fatal("NotifyDelete() error", err)
+	}
+
+	err = mount.NotifyUpdate(mountPoint + "\\aaa")
+	if err != nil {
+		t.Fatal("NotifyUpdate() error", err)
+	}
+
+	err = mount.NotifyRename(mountPoint+"\\aaa", mountPoint+"\\bbb", true)
+	if err != nil {
+		t.Fatal("NotifyRename() error", err)
+	}
+
+	err = mount.NotifyXAttrUpdate(mountPoint + "\\aaa")
+	if err != nil {
+		t.Fatal("NotifyXAttrUpdate() error", err)
+	}
+
+}

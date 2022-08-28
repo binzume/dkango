@@ -60,7 +60,7 @@ type MountOptions struct {
 type MountInfo struct {
 	fsys        fs.FS
 	opt         *MountOptions
-	handle      uintptr
+	instance    uintptr
 	openedFiles map[*openedFile]struct{}
 	mounted     sync.WaitGroup
 	lock        sync.Mutex
@@ -83,7 +83,7 @@ func (m *MountInfo) removeFile(f *openedFile) {
 // Close close MountInfo to unmount this filesystem.
 // MountInfo must be closed when it is no longer needed.
 func (mi *MountInfo) Close() error {
-	err := dokan.CloseHandle(mi.handle)
+	err := dokan.CloseHandle(mi.instance)
 	unregisterInstance(mi)
 	return err
 }
@@ -93,6 +93,31 @@ func (m *MountInfo) OpenedFileCount() int {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	return len(m.openedFiles)
+}
+
+// NotifyCreate notify file create event.
+func (m *MountInfo) NotifyCreate(path string, isDir bool) error {
+	return dokan.NotifyCreate(m.instance, path, isDir)
+}
+
+// NotifyDelete notify file delete event.
+func (m *MountInfo) NotifyDelete(path string, isDir bool) error {
+	return dokan.NotifyDelete(m.instance, path, isDir)
+}
+
+// NotifyRename notify file rename event.
+func (m *MountInfo) NotifyRename(oldPath, newPath string, isDir bool) error {
+	return dokan.NotifyRename(m.instance, oldPath, newPath, isDir)
+}
+
+// NotifyUpdate notify attributes update event.
+func (m *MountInfo) NotifyUpdate(path string) error {
+	return dokan.NotifyUpdate(m.instance, path)
+}
+
+// NotifyXAttrUpdate notify extended attributes update event.
+func (m *MountInfo) NotifyXAttrUpdate(path string) error {
+	return dokan.NotifyXAttrUpdate(m.instance, path)
 }
 
 type openedFile struct {
@@ -193,12 +218,12 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, erro
 		Mounted: mounted,
 	}
 
-	handle, err := dokan.CreateFileSystem(options, operations)
+	instance, err := dokan.CreateFileSystem(options, operations)
 	if err != nil {
 		unregisterInstance(mi)
 		return nil, err
 	}
-	mi.handle = handle
+	mi.instance = instance
 	mi.options = options
 	mi.operations = operations
 	mi.mounted.Wait()
