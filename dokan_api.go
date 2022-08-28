@@ -32,6 +32,7 @@ const (
 	STATUS_END_OF_FILE           = 0xC0000011
 	STATUS_ACCESS_DENIED         = 0xC0000022
 	STATUS_OBJECT_NAME_NOT_FOUND = 0xC0000034
+	STATUS_OBJECT_NAME_COLLISION = 0xC0000035
 	STATUS_FILE_IS_A_DIRECTORY   = 0xC00000BA
 	STATUS_NOT_SUPPORTED         = 0xC00000BB
 	STATUS_NOT_A_DIRECTORY       = 0xC0000103
@@ -99,7 +100,7 @@ type DokanOptions struct {
 	Version       uint16
 	SingleThread  uint8
 	Options       uint32
-	GlobalContext uint64
+	GlobalContext unsafe.Pointer
 
 	MountPoint uintptr // LPCWSTR
 	UNCName    uintptr // LPCWSTR
@@ -144,7 +145,7 @@ type DokanOperations struct {
 }
 
 type DokanFileInfo struct {
-	Context           uint64
+	Context           unsafe.Pointer
 	DokanContext      uint64
 	DokanOptions      *DokanOptions
 	ProcessingContext uintptr

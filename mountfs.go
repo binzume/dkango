@@ -85,16 +85,17 @@ func (m *MountInfo) OpenedFileCount() int {
 }
 
 type openedFile struct {
-	mi   *MountInfo
-	name string
-	file io.Closer
-	stat fs.FileInfo
-	pos  int64
+	mi         *MountInfo
+	name       string
+	openFlag   int
+	cachedStat fs.FileInfo
+	file       io.Closer
+	pos        int64
 }
 
 func (f *openedFile) Close() {
 	f.mi.removeFile(f)
-	f.stat = nil
+	f.cachedStat = nil
 	if f.file != nil {
 		f.file.Close()
 	}
@@ -125,6 +126,7 @@ func unregisterInstance(mi *MountInfo) {
 	}
 }
 
+// MountFS mount fsys in mountPoint.
 func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, error) {
 	if opt == nil {
 		opt = &MountOptions{
@@ -138,11 +140,15 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, erro
 	if err := registerInstance(mi); err != nil {
 		return nil, err
 	}
+	full, err := filepath.Abs(mountPoint)
+	if err == nil {
+		mountPoint = full
+	}
 	mi.mounted.Add(1)
 	path := syscall.StringToUTF16Ptr(mountPoint)
 	options := &DokanOptions{
 		Version:       205,
-		GlobalContext: uint64(uintptr(unsafe.Pointer(mi))),
+		GlobalContext: unsafe.Pointer(mi),
 		// SingleThread:  1,
 		MountPoint: uintptr(unsafe.Pointer(path)),
 		Options:    OptionFlags,
@@ -195,13 +201,11 @@ func (mi *MountInfo) Close() error {
 }
 
 func getMountInfo(finfo *DokanFileInfo) *MountInfo {
-	// TODO: Fix: possible misuse of unsafe.Pointer
-	return (*MountInfo)(unsafe.Pointer(uintptr(finfo.DokanOptions.GlobalContext)))
+	return (*MountInfo)(finfo.DokanOptions.GlobalContext)
 }
 
 func getOpenedFile(finfo *DokanFileInfo) *openedFile {
-	// TODO: Fix: possible misuse of unsafe.Pointer
-	return (*openedFile)(unsafe.Pointer(uintptr(finfo.Context)))
+	return (*openedFile)(finfo.Context)
 }
 
 func errToStatus(err error) uintptr {
@@ -272,40 +276,77 @@ var zwCreateFile = syscall.NewCallback(func(pname *uint16, secCtx uintptr, acces
 
 	create := disposition == FILE_CREATE || disposition == FILE_OPEN_IF || disposition == FILE_OVERWRITE_IF || disposition == FILE_SUPERSEDE
 	truncate := disposition == FILE_SUPERSEDE || disposition == FILE_OVERWRITE || disposition == FILE_OVERWRITE_IF
+	errIfExist := disposition == FILE_CREATE
+	openFlag := 0
+	if access&FILE_WRITE_DATA != 0 && access&FILE_READ_DATA != 0 {
+		openFlag = syscall.O_RDWR
+	} else if access&FILE_READ_DATA != 0 {
+		openFlag = syscall.O_RDONLY
+	} else if access&FILE_WRITE_DATA != 0 {
+		openFlag = syscall.O_WRONLY
+	} else if access&FILE_APPEND_DATA != 0 {
+		openFlag = syscall.O_WRONLY | syscall.O_APPEND
+	}
+
+	if openFlag == syscall.O_RDWR || openFlag == syscall.O_WRONLY {
+		if create {
+			openFlag |= syscall.O_CREAT
+		}
+		if truncate {
+			openFlag |= syscall.O_TRUNC
+		}
+		if errIfExist {
+			openFlag |= syscall.O_EXCL
+		}
+	}
 
 	stat, err := fs.Stat(mi.fsys, name)
-	if !(create && errors.Is(err, fs.ErrNotExist)) && err != nil {
-		return errToStatus(err)
+	if err != nil && !(create && errors.Is(err, fs.ErrNotExist)) {
+		return errToStatus(err) // Unexpected error
 	}
-	if disposition == FILE_CREATE && options&FILE_DIRECTORY_FILE != 0 {
+	if err == nil && disposition == FILE_CREATE {
+		return STATUS_OBJECT_NAME_COLLISION
+	}
+	if err == nil && stat.IsDir() && options&FILE_NON_DIRECTORY_FILE != 0 {
+		return STATUS_FILE_IS_A_DIRECTORY
+	}
+	if err == nil && !stat.IsDir() && options&FILE_DIRECTORY_FILE != 0 {
+		return STATUS_NOT_A_DIRECTORY
+	}
+
+	f := &openedFile{name: name, mi: mi, cachedStat: stat, openFlag: openFlag}
+
+	// Mkdir
+	if create && options&FILE_DIRECTORY_FILE != 0 {
 		if fsys, ok := mi.fsys.(MkdirFS); ok {
-			fsys.Mkdir(name, fs.ModePerm)
+			err = fsys.Mkdir(name, fs.ModePerm)
+			if err != nil {
+				return errToStatus(err)
+			}
 		} else {
 			return STATUS_NOT_SUPPORTED
 		}
 	}
-	if stat != nil && stat.IsDir() && options&FILE_NON_DIRECTORY_FILE != 0 {
-		return STATUS_FILE_IS_A_DIRECTORY
-	}
 
-	if access&FILE_WRITE_DATA != 0 {
-		_, ok := mi.fsys.(OpenWriterFS)
+	// NOTE: Reader is not opened here because sometimes it may only need GetFileInformantion()
+	if openFlag != syscall.O_RDONLY && options&FILE_DIRECTORY_FILE == 0 {
+		fsys, ok := f.mi.fsys.(OpenWriterFS)
 		if !ok {
-			// Read only FS
+			// Readonly FS. TODO: Consider to return STATUS_NOT_SUPPORTED?
 			return STATUS_ACCESS_DENIED
 		}
-	}
-
-	if truncate {
-		// TODO: Support Open(name) and f.Truncate(size)
-		if fsys, ok := mi.fsys.(WritableFS); ok {
-			fsys.Truncate(name, 0)
+		if truncate {
+			f.cachedStat = nil // file size will be cahnged
 		}
+		w, err := fsys.OpenWriter(name, openFlag)
+		if err != nil {
+			return errToStatus(err)
+		}
+		f.file = w
 	}
 
-	f := &openedFile{name: name, mi: mi, stat: stat}
 	mi.addFile(f) // avoid GC
-	finfo.Context = uint64(uintptr(unsafe.Pointer(f)))
+	finfo.Context = unsafe.Pointer(f)
 
 	return STATUS_SUCCESS
 })
@@ -377,23 +418,25 @@ var getFileInformation = syscall.NewCallback(func(pname *uint16, fi *ByHandleFil
 		return STATUS_INVALID_PARAMETER
 	}
 
-	if f.stat == nil {
+	if f.cachedStat == nil {
 		stat, err := fs.Stat(f.mi.fsys, f.name)
-		if err == nil {
-			f.stat = stat
+		f.cachedStat = stat
+		if err != nil {
+			return errToStatus(err)
 		}
 	}
-	if f.stat == nil {
-		return STATUS_ACCESS_DENIED
-	}
-	if f.stat.IsDir() {
+	if f.cachedStat.IsDir() {
 		fi.FileAttributes = FILE_ATTRIBUTE_DIRECTORY
-	} else {
+	}
+	if f.cachedStat.Mode()&0o200 == 0 {
+		fi.FileAttributes = FILE_ATTRIBUTE_READONLY
+	}
+	if fi.FileAttributes == 0 {
 		fi.FileAttributes = FILE_ATTRIBUTE_NORMAL
 	}
-	fi.FileSizeLow = uint32(f.stat.Size())
-	fi.FileSizeHigh = uint32(f.stat.Size() >> 32)
-	t := (f.stat.ModTime().UnixNano())/100 + UnixTimeOffset
+	fi.FileSizeLow = uint32(f.cachedStat.Size())
+	fi.FileSizeHigh = uint32(f.cachedStat.Size() >> 32)
+	t := (f.cachedStat.ModTime().UnixNano())/100 + UnixTimeOffset
 	fi.LastWriteTime[0] = uint32(t)
 	fi.LastWriteTime[1] = uint32(t >> 32)
 	fi.LastAccessTime = fi.LastWriteTime
@@ -454,29 +497,20 @@ var writeFile = syscall.NewCallback(func(pname *uint16, buf *byte, sz int32, wri
 		return STATUS_INVALID_PARAMETER
 	}
 
-	fsys, ok := f.mi.fsys.(OpenWriterFS)
-	if !ok {
-		log.Println("WriteFile: not support OpenWriter?")
-		return STATUS_NOT_SUPPORTED
+	if f.openFlag == syscall.O_RDONLY || f.file == nil {
+		return STATUS_ACCESS_DENIED
 	}
 
-	if f.file == nil {
-		r, err := fsys.OpenWriter(f.name, syscall.O_RDWR|syscall.O_CREAT)
-		if err != nil {
-			return errToStatus(err)
-		}
-		f.file = r
-	}
-
-	if f.pos != offset {
+	// TODO: handle negative offset correctly.
+	if offset >= 0 && f.pos != offset {
 		if seeker, ok := f.file.(io.Seeker); ok {
 			_, err := seeker.Seek(offset, io.SeekStart)
 			if err != nil {
 				return errToStatus(err)
 			}
 		} else if w, ok := f.file.(io.WriterAt); ok {
-			f.stat = nil // invalidate cached stat
-			f.pos = -1   // TODO
+			f.cachedStat = nil // invalidate cached stat
+			f.pos = -1         // TODO
 			n, err := w.WriteAt(unsafe.Slice(buf, sz), offset)
 			*written = int32(n)
 			return errToStatus(err)
@@ -516,7 +550,7 @@ var closeFile = syscall.NewCallback(func(pname *uint16, finfo *DokanFileInfo) ui
 		return STATUS_INVALID_PARAMETER
 	}
 	f.Close()
-	finfo.Context = 0
+	finfo.Context = nil
 	return STATUS_SUCCESS
 })
 
@@ -556,7 +590,7 @@ var moveFile = syscall.NewCallback(func(pname *uint16, pNewName *uint16, replace
 	if name == "" {
 		name = "."
 	}
-	f.stat = nil
+	f.cachedStat = nil
 	return errToStatus(fsys.Rename(f.name, name))
 })
 
@@ -570,8 +604,17 @@ var setEndOfFile = syscall.NewCallback(func(pname *uint16, offset int64, finfo *
 	if fsys, ok := f.mi.fsys.(interface {
 		Truncate(string, int64) error
 	}); ok {
-		f.stat = nil
+		f.cachedStat = nil
 		return errToStatus(fsys.Truncate(f.name, offset))
+	} else if fsys, ok := f.mi.fsys.(OpenWriterFS); ok {
+		f, err := fsys.OpenWriter(f.name, syscall.O_WRONLY|syscall.O_CREAT)
+		if err != nil {
+			return errToStatus(err)
+		}
+		defer f.Close()
+		if trunc, ok := f.(interface{ Truncate(int64) error }); ok {
+			return errToStatus(trunc.Truncate(offset))
+		}
 	}
 	return STATUS_NOT_SUPPORTED
 })

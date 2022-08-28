@@ -105,10 +105,6 @@ func (fsys *testWritableFs) OpenWriter(name string, flag int) (io.WriteCloser, e
 	return os.OpenFile(path.Join(fsys.path, name), flag, fs.ModePerm)
 }
 
-func (fsys *testWritableFs) Truncate(name string, size int64) error {
-	return os.Truncate(name, size)
-}
-
 func (fsys *testWritableFs) Remove(name string) error {
 	return os.Remove(path.Join(fsys.path, name))
 }
@@ -138,7 +134,7 @@ func TestWritableFS(t *testing.T) {
 	if err != nil {
 		t.Fatal("ReadDir() error", err)
 	}
-	t.Log("files: ", len(files))
+	t.Log("ReadDir() files: ", len(files))
 
 	f, err := os.Create(fname)
 	if err != nil {
@@ -189,5 +185,64 @@ func TestWritableFS(t *testing.T) {
 	err = os.Remove(dname)
 	if err != nil {
 		t.Fatal("Remove() dir error", err)
+	}
+
+	f, err = os.OpenFile(fname, os.O_WRONLY, os.ModePerm)
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal("OpenFile() should fail with ErrNotExist", err)
+	}
+
+	// Create empty file
+	f, err = os.Create(fname)
+	if err != nil {
+		t.Fatal("Create() error", err)
+	}
+	err = f.Close()
+	if err != nil {
+		t.Fatal("Close() error", err)
+	}
+
+	// Append1
+	f, err = os.OpenFile(fname, os.O_WRONLY|os.O_APPEND, os.ModePerm)
+	if err != nil {
+		t.Fatal("OpenFile() error", err)
+	}
+	_, err = f.Write([]byte("01234"))
+	if err != nil {
+		t.Fatal("Write() error", err)
+	}
+	err = f.Close()
+	if err != nil {
+		t.Fatal("Close() error", err)
+	}
+
+	// Append2
+	f, err = os.OpenFile(fname, os.O_WRONLY|os.O_APPEND, os.ModePerm)
+	if err != nil {
+		t.Fatal("OpenFile() error", err)
+	}
+	_, err = f.Write([]byte("56789"))
+	if err != nil {
+		t.Fatal("Write() error", err)
+	}
+	err = f.Close()
+	if err != nil {
+		t.Fatal("Close() error", err)
+	}
+
+	stat, err := os.Stat(fname)
+	if stat.Size() != 10 {
+		t.Fatal("Size() should returns 10", stat.Size())
+	}
+
+	// Err if exists
+	f, err = os.OpenFile(fname, os.O_WRONLY|os.O_CREATE|os.O_EXCL, os.ModePerm)
+	if !errors.Is(err, fs.ErrExist) {
+		t.Fatal("OpenFile() should fail with ErrExist", err)
+	}
+
+	err = os.Remove(fname)
+	if err != nil {
+		t.Fatal("Remove() error", err)
 	}
 }
