@@ -7,9 +7,6 @@ import (
 	"os"
 	"path"
 	"testing"
-	"unsafe"
-
-	"github.com/binzume/dkango/dokan"
 )
 
 const srcDir = "."
@@ -19,37 +16,12 @@ type FileSystem interface {
 	OpenWriter(name string, flag int) (io.WriteCloser, error)
 }
 
-func TestUnsafe(t *testing.T) {
-	var fsys testWritableFs
-	var fsysiface FileSystem = &fsys
-	ptr := unsafe.Pointer(&fsysiface)
-	t.Log(uintptr(ptr))
-	aa := *(*FileSystem)(unsafe.Pointer(ptr))
-	t.Log(aa.OpenWriter("", 0))
-}
-
 func TestMountFS(t *testing.T) {
-	n, err := dokan.MountPoints()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(n) != 0 {
-		t.Error("mount points != 0: ", n)
-	}
-
 	mount, err := MountFS(mountPoint, os.DirFS(srcDir), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer mount.Close()
-
-	n, err = dokan.MountPoints()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(n) != 1 {
-		t.Error("mount points != 1: ", n)
-	}
 
 	if err != nil {
 		t.Error("ReadDir() error", err)
