@@ -9,6 +9,9 @@ import (
 
 const DOKAN_MINIMUM_COMPATIBLE_VERSION = 200
 
+// UnixTime epoch from 16001-01-01 (UTC) in 0.1us.
+const UnixTimeOffset = 116444736000000000
+
 var (
 	dokan2             = windows.NewLazySystemDLL("dokan2.dll")
 	dokanDriverVersion = dokan2.NewProc("DokanDriverVersion")

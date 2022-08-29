@@ -11,24 +11,22 @@ import (
 )
 
 type disk struct {
-	vi             VolumeInformation
-	TotalBytes     uint64
-	AvailableBytes uint64
-	fsys           fs.FS
+	opt  *MountOptions
+	fsys fs.FS
 }
 
-func (d *disk) GetVolumeInformation(finfo *dokan.FileInfo) (VolumeInformation, dokan.NTStatus) {
-	return d.vi, dokan.STATUS_SUCCESS
+func (d *disk) GetVolumeInformation(finfo *dokan.FileInfo) (dokan.VolumeInformation, dokan.NTStatus) {
+	return d.opt.VolumeInfo, dokan.STATUS_SUCCESS
 }
 
 func (d *disk) GetDiskFreeSpace(availableBytes *uint64, totalBytes *uint64, freeBytes *uint64, finfo *dokan.FileInfo) dokan.NTStatus {
-	*availableBytes = d.AvailableBytes
-	*totalBytes = d.TotalBytes
-	*freeBytes = d.AvailableBytes
+	*availableBytes = d.opt.AvailableBytes
+	*totalBytes = d.opt.TotalBytes
+	*freeBytes = d.opt.AvailableBytes
 	return dokan.STATUS_SUCCESS
 }
 
-func (mi *disk) CreateFile(name string, secCtx uintptr, access, attrs, share, disposition, options uint32, finfo *dokan.FileInfo) (FileHandle, dokan.NTStatus) {
+func (mi *disk) CreateFile(name string, secCtx uintptr, access, attrs, share, disposition, options uint32, finfo *dokan.FileInfo) (dokan.FileHandle, dokan.NTStatus) {
 	name = strings.TrimPrefix(filepath.ToSlash(name), "/")
 	if name == "" {
 		name = "."

@@ -11,6 +11,9 @@ import (
 	"github.com/binzume/dkango/dokan"
 )
 
+// UnixTime epoch from 16001-01-01 (UTC) in 0.1us.
+const UnixTimeOffset = dokan.UnixTimeOffset
+
 type openedFile struct {
 	mi         *disk
 	name       string
@@ -91,7 +94,7 @@ func (f *openedFile) GetFileInformation(fi *dokan.ByHandleFileInfo, finfo *dokan
 	fi.LastWriteTime[1] = uint32(t >> 32)
 	fi.LastAccessTime = fi.LastWriteTime
 	fi.CreationTime = fi.LastWriteTime
-	fi.VolumeSerialNumber = int32(f.mi.vi.SerialNumber)
+	fi.VolumeSerialNumber = int32(f.mi.opt.VolumeInfo.SerialNumber)
 
 	return dokan.STATUS_SUCCESS
 }
@@ -196,7 +199,7 @@ func (f *openedFile) DeleteFile(finfo *dokan.FileInfo) dokan.NTStatus {
 	return dokan.STATUS_SUCCESS
 }
 
-func (f *openedFile) DeleteDir(finfo *dokan.FileInfo) dokan.NTStatus {
+func (f *openedFile) DeleteDirectory(finfo *dokan.FileInfo) dokan.NTStatus {
 	// will be deleted in Cleanup()
 	return dokan.STATUS_SUCCESS
 }
