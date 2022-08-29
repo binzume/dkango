@@ -62,7 +62,7 @@ type MountOptions struct {
 type MountInfo struct {
 	fsys        fs.FS
 	opt         *MountOptions
-	instance    uintptr
+	instance    dokan.MountHandle
 	openedFiles map[*openedFile]struct{}
 	mounted     sync.WaitGroup
 	lock        sync.Mutex
@@ -84,7 +84,7 @@ func (m *MountInfo) removeFile(f *openedFile) {
 // Close close MountInfo to unmount this filesystem.
 // MountInfo must be closed when it is no longer needed.
 func (mi *MountInfo) Close() error {
-	err := dokan.CloseHandle(mi.instance)
+	err := mi.instance.Close()
 	unregisterInstance(mi)
 	return err
 }
@@ -130,7 +130,7 @@ type openedFile struct {
 	pos        int64
 }
 
-func (f *openedFile) Close() {
+func (f *openedFile) CloseFile(*dokan.FileInfo) {
 	f.mi.removeFile(f)
 	f.cachedStat = nil
 	if f.file != nil {
@@ -224,11 +224,10 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, erro
 	mi.mounted.Add(1)
 	path := syscall.StringToUTF16Ptr(mountPoint)
 	options := &dokan.DokanOptions{
-		Version:       205,
+		Version:       dokan.DOKAN_MINIMUM_COMPATIBLE_VERSION,
 		GlobalContext: unsafe.Pointer(mi),
-		// SingleThread:  1,
-		MountPoint: uintptr(unsafe.Pointer(path)),
-		Options:    OptionFlags | ro,
+		MountPoint:    uintptr(unsafe.Pointer(path)),
+		Options:       OptionFlags | ro,
 	}
 
 	instance, err := dokan.CreateFileSystem(options, ensureDokanOperations())
@@ -242,20 +241,20 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*MountInfo, erro
 	return mi, nil
 }
 
-func getMountInfo(finfo *dokan.DokanFileInfo) *MountInfo {
+func getMountInfo(finfo *dokan.FileInfo) *MountInfo {
 	return (*MountInfo)(finfo.DokanOptions.GlobalContext)
 }
 
-func getOpenedFile(finfo *dokan.DokanFileInfo) *openedFile {
+func getOpenedFile(finfo *dokan.FileInfo) *openedFile {
 	return (*openedFile)(finfo.Context)
 }
 
-func debugCallback() uintptr {
+func debugCallback() dokan.NTStatus {
 	log.Println("debugCallback")
 	return dokan.STATUS_NOT_SUPPORTED
 }
 
-func getVolumeInformation(pName *uint16, nameSize int32, serial *uint32, maxCLen *uint32, flags *uint32, pSysName *uint16, sysNameSize int32, finfo *dokan.DokanFileInfo) uintptr {
+func getVolumeInformation(pName *uint16, nameSize int32, serial *uint32, maxCLen *uint32, flags *uint32, pSysName *uint16, sysNameSize int32, finfo *dokan.FileInfo) dokan.NTStatus {
 	dk := getMountInfo(finfo)
 	if dk == nil {
 		return dokan.STATUS_INVALID_PARAMETER
@@ -268,7 +267,7 @@ func getVolumeInformation(pName *uint16, nameSize int32, serial *uint32, maxCLen
 	return dokan.STATUS_SUCCESS
 }
 
-func getDiskFreeSpace(availableBytes *uint64, totalBytes *uint64, freeBytes *uint64, finfo *dokan.DokanFileInfo) uintptr {
+func getDiskFreeSpace(availableBytes *uint64, totalBytes *uint64, freeBytes *uint64, finfo *dokan.FileInfo) dokan.NTStatus {
 	dk := getMountInfo(finfo)
 	if dk == nil {
 		return dokan.STATUS_INVALID_PARAMETER
@@ -280,7 +279,7 @@ func getDiskFreeSpace(availableBytes *uint64, totalBytes *uint64, freeBytes *uin
 	return dokan.STATUS_SUCCESS
 }
 
-func zwCreateFile(pname *uint16, secCtx uintptr, access, attrs, share, disposition, options uint32, finfo *dokan.DokanFileInfo) uintptr {
+func zwCreateFile(pname *uint16, secCtx uintptr, access, attrs, share, disposition, options uint32, finfo *dokan.FileInfo) dokan.NTStatus {
 	mi := getMountInfo(finfo)
 	if mi == nil {
 		return dokan.STATUS_INVALID_PARAMETER
@@ -369,7 +368,7 @@ func zwCreateFile(pname *uint16, secCtx uintptr, access, attrs, share, dispositi
 	return dokan.STATUS_SUCCESS
 }
 
-func findFiles(pname *uint16, fillFindData uintptr, finfo *dokan.DokanFileInfo) uintptr {
+func findFiles(pname *uint16, fillFindData uintptr, finfo *dokan.FileInfo) dokan.NTStatus {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("ERROR: FindFiles: not opened file")
@@ -421,7 +420,7 @@ func findFiles(pname *uint16, fillFindData uintptr, finfo *dokan.DokanFileInfo) 
 	return dokan.STATUS_SUCCESS
 }
 
-func getFileInformation(pname *uint16, fi *dokan.ByHandleFileInfo, finfo *dokan.DokanFileInfo) uintptr {
+func getFileInformation(pname *uint16, fi *dokan.ByHandleFileInfo, finfo *dokan.FileInfo) dokan.NTStatus {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("ERROR: GetFileInformation: not opened file")
@@ -456,7 +455,7 @@ func getFileInformation(pname *uint16, fi *dokan.ByHandleFileInfo, finfo *dokan.
 	return dokan.STATUS_SUCCESS
 }
 
-func readFile(pname *uint16, buf *byte, sz int32, read *int32, offset int64, finfo *dokan.DokanFileInfo) uintptr {
+func readFile(pname *uint16, buf *byte, sz int32, read *int32, offset int64, finfo *dokan.FileInfo) dokan.NTStatus {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("ERROR: ReadFile: not opened file")
@@ -500,7 +499,7 @@ func readFile(pname *uint16, buf *byte, sz int32, read *int32, offset int64, fin
 	return dokan.STATUS_NOT_SUPPORTED
 }
 
-func writeFile(pname *uint16, buf *byte, sz int32, written *int32, offset int64, finfo *dokan.DokanFileInfo) uintptr {
+func writeFile(pname *uint16, buf *byte, sz int32, written *int32, offset int64, finfo *dokan.FileInfo) dokan.NTStatus {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("ERROR: WriteFile: not opened file")
@@ -537,14 +536,14 @@ func writeFile(pname *uint16, buf *byte, sz int32, written *int32, offset int64,
 	return dokan.STATUS_NOT_SUPPORTED
 }
 
-func cleanup(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
+func cleanup(pname *uint16, finfo *dokan.FileInfo) dokan.NTStatus {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("ERROR: Cleanup: not opened file")
 		return dokan.STATUS_INVALID_PARAMETER
 	}
 
-	if finfo.DeleteOnClose == 0 {
+	if !finfo.IsDeleteOnClose() {
 		return dokan.STATUS_SUCCESS
 	}
 	if fsys, ok := f.mi.fsys.(RemoveFS); ok {
@@ -553,18 +552,18 @@ func cleanup(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
 	return dokan.STATUS_NOT_SUPPORTED
 }
 
-func closeFile(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
+func closeFile(pname *uint16, finfo *dokan.FileInfo) dokan.NTStatus {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("ERROR: CloseFile: not opened file")
 		return dokan.STATUS_INVALID_PARAMETER
 	}
-	f.Close()
+	f.CloseFile(finfo)
 	finfo.Context = nil
 	return dokan.STATUS_SUCCESS
 }
 
-func deleteFile(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
+func deleteFile(pname *uint16, finfo *dokan.FileInfo) dokan.NTStatus {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("ERROR: DeleteFile: not opened file")
@@ -573,7 +572,7 @@ func deleteFile(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
 	return dokan.STATUS_SUCCESS
 }
 
-func deleteDir(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
+func deleteDir(pname *uint16, finfo *dokan.FileInfo) dokan.NTStatus {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("ERROR: DeleteDir: not opened file")
@@ -582,7 +581,7 @@ func deleteDir(pname *uint16, finfo *dokan.DokanFileInfo) uintptr {
 	return dokan.STATUS_SUCCESS
 }
 
-func moveFile(pname *uint16, pNewName *uint16, replaceIfExisting bool, finfo *dokan.DokanFileInfo) uintptr {
+func moveFile(pname *uint16, pNewName *uint16, replaceIfExisting bool, finfo *dokan.FileInfo) dokan.NTStatus {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("ERROR: MoveFile: not opened?")
@@ -604,7 +603,7 @@ func moveFile(pname *uint16, pNewName *uint16, replaceIfExisting bool, finfo *do
 	return dokan.ErrorToNTStatus(fsys.Rename(f.name, name))
 }
 
-func setEndOfFile(pname *uint16, offset int64, finfo *dokan.DokanFileInfo) uintptr {
+func setEndOfFile(pname *uint16, offset int64, finfo *dokan.FileInfo) dokan.NTStatus {
 	f := getOpenedFile(finfo)
 	if f == nil {
 		log.Println("ERROR: SetEndOfFile: not opened?")
@@ -621,7 +620,7 @@ func setEndOfFile(pname *uint16, offset int64, finfo *dokan.DokanFileInfo) uintp
 	return dokan.STATUS_NOT_SUPPORTED
 }
 
-func mounted(mountPoint *uint16, finfo *dokan.DokanFileInfo) uintptr {
+func mounted(mountPoint *uint16, finfo *dokan.FileInfo) dokan.NTStatus {
 	dk := getMountInfo(finfo)
 	if dk == nil {
 		return dokan.STATUS_INVALID_PARAMETER
@@ -630,6 +629,6 @@ func mounted(mountPoint *uint16, finfo *dokan.DokanFileInfo) uintptr {
 	return dokan.STATUS_SUCCESS
 }
 
-func unmounted(finfo *dokan.DokanFileInfo) uintptr {
+func unmounted(finfo *dokan.FileInfo) dokan.NTStatus {
 	return dokan.STATUS_SUCCESS
 }

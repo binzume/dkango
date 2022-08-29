@@ -15,7 +15,8 @@ var ErrMount = errors.New("Dokan mount failed")
 var ErrBadMountPoint = errors.New("Mount point is invalid")
 var ErrDokanVersion = errors.New("Version error")
 
-func ErrorToNTStatus(err error) uintptr {
+// ErrorToNTStatus map typical IO errrors to NTStatus
+func ErrorToNTStatus(err error) NTStatus {
 	if err == nil {
 		return STATUS_SUCCESS
 	} else if errors.Is(err, fs.ErrNotExist) {

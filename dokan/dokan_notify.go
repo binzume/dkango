@@ -15,7 +15,7 @@ var (
 	dokanNotifyXAttrUpdate = dokan2.NewProc("DokanNotifyXAttrUpdate")
 )
 
-func NotifyCreate(instance uintptr, filePath string, isDirectory bool) error {
+func NotifyCreate(instance MountHandle, filePath string, isDirectory bool) error {
 	var dir uintptr
 	if isDirectory {
 		dir = 1
@@ -24,14 +24,14 @@ func NotifyCreate(instance uintptr, filePath string, isDirectory bool) error {
 	if err != nil {
 		return err
 	}
-	ret, _, errNo := syscall.SyscallN(dokanNotifyCreate.Addr(), instance, uintptr(unsafe.Pointer(u16path)), dir)
+	ret, _, errNo := syscall.SyscallN(dokanNotifyCreate.Addr(), uintptr(instance), uintptr(unsafe.Pointer(u16path)), dir)
 	if errNo == 0 && ret == 0 {
 		return errors.New("Failed to send notification")
 	}
 	return convErr(errNo)
 }
 
-func NotifyDelete(instance uintptr, filePath string, isDirectory bool) error {
+func NotifyDelete(instance MountHandle, filePath string, isDirectory bool) error {
 	var dir uintptr
 	if isDirectory {
 		dir = 1
@@ -40,14 +40,14 @@ func NotifyDelete(instance uintptr, filePath string, isDirectory bool) error {
 	if err != nil {
 		return err
 	}
-	ret, _, errNo := syscall.SyscallN(dokanNotifyDelete.Addr(), instance, uintptr(unsafe.Pointer(u16path)), dir)
+	ret, _, errNo := syscall.SyscallN(dokanNotifyDelete.Addr(), uintptr(instance), uintptr(unsafe.Pointer(u16path)), dir)
 	if errNo == 0 && ret == 0 {
 		return errors.New("Failed to send notification")
 	}
 	return convErr(errNo)
 }
 
-func NotifyRename(instance uintptr, oldPath, newPath string, isDirectory bool) error {
+func NotifyRename(instance MountHandle, oldPath, newPath string, isDirectory bool) error {
 	var dir uintptr
 	if isDirectory {
 		dir = 1
@@ -60,31 +60,31 @@ func NotifyRename(instance uintptr, oldPath, newPath string, isDirectory bool) e
 	if err != nil {
 		return err
 	}
-	ret, _, errNo := syscall.SyscallN(dokanNotifyRename.Addr(), instance, uintptr(unsafe.Pointer(u16old)), uintptr(unsafe.Pointer(u16new)), dir)
+	ret, _, errNo := syscall.SyscallN(dokanNotifyRename.Addr(), uintptr(instance), uintptr(unsafe.Pointer(u16old)), uintptr(unsafe.Pointer(u16new)), dir)
 	if errNo == 0 && ret == 0 {
 		return errors.New("Failed to send notification")
 	}
 	return convErr(errNo)
 }
 
-func NotifyUpdate(instance uintptr, filePath string) error {
+func NotifyUpdate(instance MountHandle, filePath string) error {
 	u16path, err := syscall.UTF16PtrFromString(filePath)
 	if err != nil {
 		return err
 	}
-	ret, _, errNo := syscall.SyscallN(dokanNotifyUpdate.Addr(), instance, uintptr(unsafe.Pointer(u16path)))
+	ret, _, errNo := syscall.SyscallN(dokanNotifyUpdate.Addr(), uintptr(instance), uintptr(unsafe.Pointer(u16path)))
 	if errNo == 0 && ret == 0 {
 		return errors.New("Failed to send notification")
 	}
 	return convErr(errNo)
 }
 
-func NotifyXAttrUpdate(instance uintptr, filePath string) error {
+func NotifyXAttrUpdate(instance MountHandle, filePath string) error {
 	u16path, err := syscall.UTF16PtrFromString(filePath)
 	if err != nil {
 		return err
 	}
-	ret, _, errNo := syscall.SyscallN(dokanNotifyXAttrUpdate.Addr(), instance, uintptr(unsafe.Pointer(u16path)))
+	ret, _, errNo := syscall.SyscallN(dokanNotifyXAttrUpdate.Addr(), uintptr(instance), uintptr(unsafe.Pointer(u16path)))
 	if errNo == 0 && ret == 0 {
 		return errors.New("Failed to send notification")
 	}

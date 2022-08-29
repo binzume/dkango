@@ -7,12 +7,26 @@ import (
 	"os"
 	"path"
 	"testing"
+	"unsafe"
 
 	"github.com/binzume/dkango/dokan"
 )
 
 const srcDir = "."
 const mountPoint = "X:"
+
+type FileSystem interface {
+	OpenWriter(name string, flag int) (io.WriteCloser, error)
+}
+
+func TestUnsafe(t *testing.T) {
+	var fsys testWritableFs
+	var fsysiface FileSystem = &fsys
+	ptr := unsafe.Pointer(&fsysiface)
+	t.Log(uintptr(ptr))
+	aa := *(*FileSystem)(unsafe.Pointer(ptr))
+	t.Log(aa.OpenWriter("", 0))
+}
 
 func TestMountFS(t *testing.T) {
 	n, err := dokan.MountPoints()

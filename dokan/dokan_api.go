@@ -92,7 +92,13 @@ func MountPoints() ([]*MountPointInfo, error) {
 	return mps, convErr(err)
 }
 
-func CreateFileSystem(options *DokanOptions, operations *DokanOperations) (uintptr, error) {
+type MountHandle uintptr
+
+func (mh MountHandle) Close() error {
+	return CloseHandle(uintptr(mh))
+}
+
+func CreateFileSystem(options *DokanOptions, operations *DokanOperations) (MountHandle, error) {
 	var handle uintptr
 	ret, _, err := syscall.SyscallN(dokanCreateFileSystem.Addr(), uintptr(unsafe.Pointer(options)), uintptr(unsafe.Pointer(operations)), uintptr(unsafe.Pointer(&handle)))
 	if err != 0 {
@@ -118,7 +124,7 @@ func CreateFileSystem(options *DokanOptions, operations *DokanOperations) (uintp
 			return 0, ErrDokan
 		}
 	}
-	return handle, nil
+	return MountHandle(handle), nil
 }
 
 func CloseHandle(handle uintptr) error {

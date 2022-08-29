@@ -1,6 +1,9 @@
 package dokan
 
-import "unsafe"
+import (
+	"strconv"
+	"unsafe"
+)
 
 // DokanOptions
 const (
@@ -15,17 +18,26 @@ const (
 	DOKAN_OPTION_FILELOCK_USER_MODE = 256
 )
 
+type NTStatus uintptr
+
+func (n NTStatus) Error() string {
+	return "NTSTATUS=" + strconv.FormatUint(uint64(n), 16)
+}
+
 // NTSTATUS
 const (
-	STATUS_SUCCESS               = 0
-	STATUS_INVALID_PARAMETER     = 0xC000000D
-	STATUS_END_OF_FILE           = 0xC0000011
-	STATUS_ACCESS_DENIED         = 0xC0000022
-	STATUS_OBJECT_NAME_NOT_FOUND = 0xC0000034
-	STATUS_OBJECT_NAME_COLLISION = 0xC0000035
-	STATUS_FILE_IS_A_DIRECTORY   = 0xC00000BA
-	STATUS_NOT_SUPPORTED         = 0xC00000BB
-	STATUS_NOT_A_DIRECTORY       = 0xC0000103
+	STATUS_SUCCESS               = NTStatus(0)
+	STATUS_INVALID_PARAMETER     = NTStatus(0xC000000D)
+	STATUS_END_OF_FILE           = NTStatus(0xC0000011)
+	STATUS_ACCESS_DENIED         = NTStatus(0xC0000022)
+	STATUS_OBJECT_NAME_NOT_FOUND = NTStatus(0xC0000034)
+	STATUS_OBJECT_NAME_COLLISION = NTStatus(0xC0000035)
+	STATUS_OBJECT_PATH_NOT_FOUND = NTStatus(0xC000003A)
+	STATUS_FILE_IS_A_DIRECTORY   = NTStatus(0xC00000BA)
+	STATUS_NOT_SAME_DEVICE       = NTStatus(0xC00000D4)
+	STATUS_NOT_SUPPORTED         = NTStatus(0xC00000BB)
+	STATUS_DIRECTORY_NOT_EMPTY   = NTStatus(0xC0000101)
+	STATUS_NOT_A_DIRECTORY       = NTStatus(0xC0000103)
 )
 
 // File attribute
@@ -137,7 +149,7 @@ type DokanOperations struct {
 	FindStreams uintptr
 }
 
-type DokanFileInfo struct {
+type FileInfo struct {
 	Context           unsafe.Pointer
 	DokanContext      uint64
 	DokanOptions      *DokanOptions
@@ -149,6 +161,10 @@ type DokanFileInfo struct {
 	SynchronousIo     uint8
 	Nocache           uint8
 	WriteToEndOfFile  uint8
+}
+
+func (fi *FileInfo) IsDeleteOnClose() bool {
+	return fi.DeleteOnClose != 0
 }
 
 type FileTime [2]uint32 // TODO
