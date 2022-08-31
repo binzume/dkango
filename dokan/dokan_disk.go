@@ -172,15 +172,15 @@ func MountDisk(mountPoint string, d Disk, optionFlags uint32) (*MountInfo, error
 	if err == nil {
 		mountPoint = full
 	}
-	mi.mounted.Add(1)
 	path := syscall.StringToUTF16Ptr(mountPoint)
 	options := &DokanOptions{
 		Version:       DOKAN_MINIMUM_COMPATIBLE_VERSION,
 		GlobalContext: unsafe.Pointer(mi),
-		MountPoint:    uintptr(unsafe.Pointer(path)),
+		MountPoint:    unsafe.Pointer(path),
 		Options:       optionFlags,
 	}
 
+	mi.mounted.Add(1)
 	instance, err := CreateFileSystem(options, ensureDokanOperations())
 	if err != nil {
 		unregisterInstance(mi)

@@ -7,6 +7,7 @@ Dokan: https://ja.wikipedia.org/wiki/Dokan
 
 - Depends only on the Dokan library (No cgo)
 - fs.FS interface support
+- Implemented as a backend for https://github.com/binzume/fsmount
 
 ## Usage
 

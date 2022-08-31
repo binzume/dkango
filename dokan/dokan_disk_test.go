@@ -17,9 +17,10 @@ func (*nopDisk) CreateFile(name string, secCtx uintptr, access, attrs, share, di
 	return nil, STATUS_NOT_SUPPORTED
 }
 
-func TestMountDisk(t *testing.T) {
-	// mountpoint
-	os.Mkdir("./testmountpoont", os.ModePerm)
+func TestMountDisk_Dir(t *testing.T) {
+	mountPoint := "./testmountpoont"
+	os.Mkdir(mountPoint, os.ModePerm)
+
 	n, err := MountPoints()
 	if err != nil {
 		t.Fatal(err)
@@ -28,7 +29,7 @@ func TestMountDisk(t *testing.T) {
 		t.Error("mount points != 0: ", n)
 	}
 
-	mi, err := MountDisk("./testmountpoont", &nopDisk{}, 0)
+	mi, err := MountDisk(mountPoint, &nopDisk{}, 0)
 	if err != nil {
 		t.Fatal("MountDisk() error", err)
 	}
@@ -45,9 +46,11 @@ func TestMountDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal("Close() error", err)
 	}
+}
 
-	// X: drive
-	n, err = MountPoints()
+func TestMountDisk_Drive(t *testing.T) {
+	mountPoint := "Y:"
+	n, err := MountPoints()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +58,7 @@ func TestMountDisk(t *testing.T) {
 		t.Error("mount points != 0: ", n)
 	}
 
-	mi, err = MountDisk("X:", &nopDisk{}, 0)
+	mi, err := MountDisk(mountPoint, &nopDisk{}, 0)
 	if err != nil {
 		t.Fatal("MountDisk() error", err)
 	}

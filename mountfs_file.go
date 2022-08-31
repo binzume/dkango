@@ -11,9 +11,6 @@ import (
 	"github.com/binzume/dkango/dokan"
 )
 
-// UnixTime epoch from 16001-01-01 (UTC) in 0.1us.
-const UnixTimeOffset = dokan.UnixTimeOffset
-
 type openedFile struct {
 	mi         *disk
 	name       string
@@ -37,9 +34,7 @@ func (f *openedFile) FindFiles(fillFindDataCallBack func(fi *dokan.WIN32_FIND_DA
 			if err == nil {
 				fi.FileSizeLow = uint32(info.Size())
 				fi.FileSizeHigh = uint32(info.Size() >> 32)
-				t := (info.ModTime().UnixNano())/100 + UnixTimeOffset
-				fi.LastWriteTime[0] = uint32(t)
-				fi.LastWriteTime[1] = uint32(t >> 32)
+				fi.LastWriteTime = dokan.UnixNanoToFileTime(info.ModTime().UnixNano())
 				fi.LastAccessTime = fi.LastWriteTime
 				fi.CreationTime = fi.LastWriteTime
 			}
@@ -89,9 +84,7 @@ func (f *openedFile) GetFileInformation(fi *dokan.ByHandleFileInfo, finfo *dokan
 	}
 	fi.FileSizeLow = uint32(f.cachedStat.Size())
 	fi.FileSizeHigh = uint32(f.cachedStat.Size() >> 32)
-	t := (f.cachedStat.ModTime().UnixNano())/100 + UnixTimeOffset
-	fi.LastWriteTime[0] = uint32(t)
-	fi.LastWriteTime[1] = uint32(t >> 32)
+	fi.LastWriteTime = dokan.UnixNanoToFileTime(f.cachedStat.ModTime().UnixNano())
 	fi.LastAccessTime = fi.LastWriteTime
 	fi.CreationTime = fi.LastWriteTime
 	fi.VolumeSerialNumber = int32(f.mi.opt.VolumeInfo.SerialNumber)

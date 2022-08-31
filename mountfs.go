@@ -7,9 +7,6 @@ import (
 	"github.com/binzume/dkango/dokan"
 )
 
-// You can change this before MountFS() for debugging purpose.
-var OptionFlags uint32 = dokan.DOKAN_OPTION_ALT_STREAM // | DOKAN_OPTION_DEBUG | DOKAN_OPTION_STDERR
-
 type OpenWriterFS interface {
 	fs.FS
 	OpenWriter(name string, flag int) (io.WriteCloser, error)
@@ -44,8 +41,23 @@ type MountOptions struct {
 	VolumeInfo     dokan.VolumeInformation
 	TotalBytes     uint64
 	AvailableBytes uint64
-	WriteProtect   bool // Readonly FS even if fsys implements OpenWriterFS.
+	Flags          uint32
 }
+
+const (
+	// Enable debug messages
+	FlagDebug = dokan.DOKAN_OPTION_DEBUG
+	// Output debug messages to stderr
+	FlagStderr = dokan.DOKAN_OPTION_STDERR
+	// Enable filename:streamname path
+	FlagAltStream = dokan.DOKAN_OPTION_ALT_STREAM
+	// Readonly FS even if fsys implements OpenWriterFS.
+	FlagsWriteProtect = dokan.DOKAN_OPTION_WRITE_PROTECT
+	// Network drive
+	FlagNetwork = dokan.DOKAN_OPTION_NETWORK
+	// Removable drive
+	FlagRemovable = dokan.DOKAN_OPTION_REMOVABLE
+)
 
 // MountFS mounts fsys on mountPoint.
 func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*dokan.MountInfo, error) {
@@ -54,11 +66,8 @@ func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*dokan.MountInfo
 			VolumeInfo:     dokan.VolumeInformation{Name: "", FileSystemName: "Dokan"},
 			TotalBytes:     1024 * 1024 * 1024,
 			AvailableBytes: 1024 * 1024 * 1024,
+			Flags:          dokan.DOKAN_OPTION_ALT_STREAM,
 		}
 	}
-	var flags uint32
-	if opt.WriteProtect {
-		flags = dokan.DOKAN_OPTION_WRITE_PROTECT
-	}
-	return dokan.MountDisk(mountPoint, &disk{opt: opt, fsys: fsys}, OptionFlags|flags)
+	return dokan.MountDisk(mountPoint, &disk{opt: opt, fsys: fsys}, opt.Flags)
 }

@@ -107,8 +107,8 @@ type DokanOptions struct {
 	Options       uint32
 	GlobalContext unsafe.Pointer
 
-	MountPoint uintptr // LPCWSTR
-	UNCName    uintptr // LPCWSTR
+	MountPoint unsafe.Pointer // LPCWSTR
+	UNCName    unsafe.Pointer // LPCWSTR
 
 	Timeout                        uint32
 	AllocationUnitSize             uint32
@@ -167,7 +167,15 @@ func (fi *FileInfo) IsDeleteOnClose() bool {
 	return fi.DeleteOnClose != 0
 }
 
-type FileTime [2]uint32 // TODO
+// UnixTime epoch from 16001-01-01 (UTC) in 0.1us.
+const UnixTimeOffset = 116444736000000000
+
+type FileTime [2]uint32 // {LowDateTime, HighDateTime}
+
+func UnixNanoToFileTime(nano int64) FileTime {
+	t := nano/100 + UnixTimeOffset
+	return [2]uint32{uint32(t), uint32(t >> 32)}
+}
 
 type ByHandleFileInfo struct {
 	FileAttributes     int32

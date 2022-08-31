@@ -6,18 +6,15 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"testing"
 )
 
-const srcDir = "."
+const targetDir = "."
 const mountPoint = "X:"
 
-type FileSystem interface {
-	OpenWriter(name string, flag int) (io.WriteCloser, error)
-}
-
 func TestMountFS(t *testing.T) {
-	mount, err := MountFS(mountPoint, os.DirFS(srcDir), nil)
+	mount, err := MountFS(mountPoint, os.DirFS(targetDir), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +24,7 @@ func TestMountFS(t *testing.T) {
 		t.Error("ReadDir() error", err)
 	}
 
-	fname := mountPoint + "/LICENSE"
+	fname := filepath.Join(mountPoint, "LICENSE")
 
 	stat, err := os.Stat(fname)
 	t.Log("Name: ", stat.Name())
@@ -106,14 +103,13 @@ func (fsys *testWritableFs) Rename(name, newName string) error {
 }
 
 func TestWritableFS(t *testing.T) {
-	// OptionFlags = dokan.DOKAN_OPTION_ALT_STREAM | dokan.DOKAN_OPTION_DEBUG | dokan.DOKAN_OPTION_STDERR
-	mount, err := MountFS(mountPoint, &testWritableFs{FS: os.DirFS(srcDir), path: srcDir}, nil)
+	mount, err := MountFS(mountPoint, &testWritableFs{FS: os.DirFS(targetDir), path: targetDir}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer mount.Close()
 
-	fname := mountPoint + "\\output.txt"
+	fname := filepath.Join(mountPoint, "output.txt")
 
 	_ = os.Remove(fname)
 	_ = os.Remove(fname + ".renamed")
@@ -155,7 +151,7 @@ func TestWritableFS(t *testing.T) {
 
 	err = os.Rename(fname, fname+".renamed")
 	if err != nil {
-		t.Fatal("Remove() error", err)
+		t.Fatal("Rename() error", err)
 	}
 
 	err = os.Remove(fname + ".renamed")
@@ -163,7 +159,7 @@ func TestWritableFS(t *testing.T) {
 		t.Fatal("Remove() error", err)
 	}
 
-	dname := mountPoint + "\\dir"
+	dname := filepath.Join(mountPoint, "dir")
 
 	err = os.Mkdir(dname, fs.ModePerm)
 	if err != nil {
@@ -236,8 +232,7 @@ func TestWritableFS(t *testing.T) {
 }
 
 func TestNotify(t *testing.T) {
-	// OptionFlags = dokan.DOKAN_OPTION_ALT_STREAM | dokan.DOKAN_OPTION_DEBUG | dokan.DOKAN_OPTION_STDERR
-	mount, err := MountFS(mountPoint, &testWritableFs{FS: os.DirFS(srcDir), path: srcDir}, nil)
+	mount, err := MountFS(mountPoint, &testWritableFs{FS: os.DirFS(targetDir), path: targetDir}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
