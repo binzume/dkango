@@ -95,7 +95,7 @@ func findFiles(pname *uint16, fillFindData uintptr, finfo *FileInfo) NTStatus {
 	}
 
 	fillFindDataCallBack := func(fi *WIN32_FIND_DATAW) (bool, error) {
-		ret, _, errno := syscall.SyscallN(fillFindData, uintptr(unsafe.Pointer(&fi)), uintptr(unsafe.Pointer(finfo)))
+		ret, _, errno := syscall.SyscallN(fillFindData, uintptr(unsafe.Pointer(fi)), uintptr(unsafe.Pointer(finfo)))
 		return ret == 1, errnoToError(errno)
 	}
 	return f.FindFiles(fillFindDataCallBack, finfo)
