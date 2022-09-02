@@ -3,9 +3,9 @@ package dkango
 import (
 	"errors"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/binzume/dkango/dokan"
 )
@@ -37,24 +37,24 @@ func (mi *disk) CreateFile(name string, secCtx uintptr, access, attrs, share, di
 	errIfExist := disposition == dokan.FILE_CREATE
 	openFlag := 0
 	if access&dokan.FILE_WRITE_DATA != 0 && access&dokan.FILE_READ_DATA != 0 {
-		openFlag = syscall.O_RDWR
+		openFlag = os.O_RDWR
 	} else if access&dokan.FILE_READ_DATA != 0 {
-		openFlag = syscall.O_RDONLY
+		openFlag = os.O_RDONLY
 	} else if access&dokan.FILE_WRITE_DATA != 0 {
-		openFlag = syscall.O_WRONLY
+		openFlag = os.O_WRONLY
 	} else if access&dokan.FILE_APPEND_DATA != 0 {
-		openFlag = syscall.O_WRONLY | syscall.O_APPEND
+		openFlag = os.O_WRONLY | os.O_APPEND
 	}
 
-	if openFlag == syscall.O_RDWR || openFlag == syscall.O_WRONLY {
+	if openFlag == os.O_RDWR || openFlag == os.O_WRONLY {
 		if create {
-			openFlag |= syscall.O_CREAT
+			openFlag |= os.O_CREATE
 		}
 		if truncate {
-			openFlag |= syscall.O_TRUNC
+			openFlag |= os.O_TRUNC
 		}
 		if errIfExist {
-			openFlag |= syscall.O_EXCL
+			openFlag |= os.O_EXCL
 		}
 	}
 
@@ -87,7 +87,7 @@ func (mi *disk) CreateFile(name string, secCtx uintptr, access, attrs, share, di
 	}
 
 	// NOTE: Reader is not opened here because sometimes it may only need GetFileInformantion()
-	if openFlag != syscall.O_RDONLY && options&dokan.FILE_DIRECTORY_FILE == 0 {
+	if openFlag != os.O_RDONLY && options&dokan.FILE_DIRECTORY_FILE == 0 {
 		fsys, ok := f.mi.fsys.(OpenWriterFS)
 		if !ok {
 			// Readonly FS. TODO: Consider to return STATUS_NOT_SUPPORTED?

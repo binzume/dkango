@@ -1,9 +1,8 @@
 package dokan
 
-import (
-	"strconv"
-	"unsafe"
-)
+import "unsafe"
+
+type MountHandle uintptr
 
 // DokanOptions
 const (
@@ -19,10 +18,6 @@ const (
 )
 
 type NTStatus uintptr
-
-func (n NTStatus) Error() string {
-	return "NTSTATUS=" + strconv.FormatUint(uint64(n), 16)
-}
 
 // NTSTATUS
 const (
@@ -201,7 +196,7 @@ type WIN32_FIND_DATAW struct {
 	Reserved1         int32
 	FileName          [MAX_PATH]uint16
 	AlternateFileName [14]uint16
-	dwFileType        int32
-	dwCreatorType     int32
-	wFinderFlags      int16
+	FileType          int32
+	CreatorType       int32
+	FinderFlags       int16
 }

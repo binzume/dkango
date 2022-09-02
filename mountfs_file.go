@@ -4,9 +4,9 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/binzume/dkango/dokan"
 )
@@ -20,11 +20,17 @@ type openedFile struct {
 	pos        int64
 }
 
-func (f *openedFile) FindFiles(fillFindDataCallBack func(fi *dokan.WIN32_FIND_DATAW) (int32, syscall.Errno), finfo *dokan.FileInfo) dokan.NTStatus {
+func (f *openedFile) FindFiles(fillFindDataCallBack func(fi *dokan.WIN32_FIND_DATAW) (bool, error), finfo *dokan.FileInfo) dokan.NTStatus {
 	proc := func(files []fs.DirEntry) bool {
 		for _, file := range files {
 			fi := dokan.WIN32_FIND_DATAW{}
-			copy(fi.FileName[:], syscall.StringToUTF16(file.Name()))
+			name, err := dokan.UTF16FromString(file.Name())
+			if err != nil {
+				log.Println("ERROR: FindFiles", err)
+				continue
+			}
+
+			copy(fi.FileName[:], name)
 			if file.IsDir() {
 				fi.FileAttributes = dokan.FILE_ATTRIBUTE_DIRECTORY
 			} else {
@@ -38,8 +44,8 @@ func (f *openedFile) FindFiles(fillFindDataCallBack func(fi *dokan.WIN32_FIND_DA
 				fi.LastAccessTime = fi.LastWriteTime
 				fi.CreationTime = fi.LastWriteTime
 			}
-			ret, errNo := fillFindDataCallBack(&fi)
-			if errNo != 0 || ret == 1 {
+			bufferFull, err := fillFindDataCallBack(&fi)
+			if err != nil || bufferFull {
 				return false
 			}
 		}
@@ -131,7 +137,7 @@ func (f *openedFile) ReadFile(buf []byte, read *int32, offset int64, finfo *doka
 }
 
 func (f *openedFile) WriteFile(buf []byte, written *int32, offset int64, finfo *dokan.FileInfo) dokan.NTStatus {
-	if f.openFlag == syscall.O_RDONLY || f.file == nil {
+	if f.openFlag == os.O_RDONLY || f.file == nil {
 		return dokan.STATUS_ACCESS_DENIED
 	}
 

@@ -30,7 +30,7 @@ var (
 	dokanResetTimeout = dokan2.NewProc("DokanResetTimeout")
 )
 
-func convErr(err syscall.Errno) error {
+func errnoToError(err syscall.Errno) error {
 	if err == 0 {
 		return nil
 	}
@@ -42,7 +42,7 @@ func DriverVersion() (uint32, error) {
 		return 0, ErrFailedToLoadDokan
 	}
 	ret, _, err := syscall.SyscallN(dokanDriverVersion.Addr())
-	return uint32(ret), convErr(err)
+	return uint32(ret), errnoToError(err)
 }
 
 func Version() (uint32, error) {
@@ -50,7 +50,7 @@ func Version() (uint32, error) {
 		return 0, ErrFailedToLoadDokan
 	}
 	ret, _, err := syscall.SyscallN(dokanVersion.Addr())
-	return uint32(ret), convErr(err)
+	return uint32(ret), errnoToError(err)
 }
 
 func Init() error {
@@ -60,19 +60,19 @@ func Init() error {
 		return ErrDokanVersion
 	}
 	_, _, err := syscall.SyscallN(dokanInit.Addr())
-	return convErr(err)
+	return errnoToError(err)
 }
 
 func Shutdown() error {
 	_, _, err := syscall.SyscallN(dokanShutdown.Addr())
-	return convErr(err)
+	return errnoToError(err)
 }
 
 func MountPoints() ([]*MountPointInfo, error) {
 	var n uint32
 	ret, _, err := syscall.SyscallN(dokanGetMountPointList.Addr(), uintptr(0), uintptr(unsafe.Pointer(&n)))
 	if err != 0 {
-		return nil, convErr(err)
+		return nil, errnoToError(err)
 	}
 
 	var mps []*MountPointInfo
@@ -89,10 +89,8 @@ func MountPoints() ([]*MountPointInfo, error) {
 	}
 
 	syscall.SyscallN(dokanReleaseMountPointList.Addr(), ret)
-	return mps, convErr(err)
+	return mps, errnoToError(err)
 }
-
-type MountHandle uintptr
 
 func (mh MountHandle) Close() error {
 	return CloseHandle(uintptr(mh))
@@ -102,7 +100,7 @@ func CreateFileSystem(options *DokanOptions, operations *DokanOperations) (Mount
 	var handle uintptr
 	ret, _, err := syscall.SyscallN(dokanCreateFileSystem.Addr(), uintptr(unsafe.Pointer(options)), uintptr(unsafe.Pointer(operations)), uintptr(unsafe.Pointer(&handle)))
 	if err != 0 {
-		return 0, convErr(err)
+		return 0, errnoToError(err)
 	}
 	if ret != 0 || handle == 0 {
 		switch int32(ret) {
@@ -129,5 +127,13 @@ func CreateFileSystem(options *DokanOptions, operations *DokanOperations) (Mount
 
 func CloseHandle(handle uintptr) error {
 	_, _, err := syscall.SyscallN(dokanCloseHandle.Addr(), handle)
-	return convErr(err)
+	return errnoToError(err)
+}
+
+func UTF16FromString(s string) ([]uint16, error) {
+	return syscall.UTF16FromString(s)
+}
+
+func UTF16PtrFromString(s string) (*uint16, error) {
+	return syscall.UTF16PtrFromString(s)
 }

@@ -28,7 +28,7 @@ func NotifyCreate(instance MountHandle, filePath string, isDirectory bool) error
 	if errNo == 0 && ret == 0 {
 		return errors.New("Failed to send notification")
 	}
-	return convErr(errNo)
+	return errnoToError(errNo)
 }
 
 func NotifyDelete(instance MountHandle, filePath string, isDirectory bool) error {
@@ -44,7 +44,7 @@ func NotifyDelete(instance MountHandle, filePath string, isDirectory bool) error
 	if errNo == 0 && ret == 0 {
 		return errors.New("Failed to send notification")
 	}
-	return convErr(errNo)
+	return errnoToError(errNo)
 }
 
 func NotifyRename(instance MountHandle, oldPath, newPath string, isDirectory bool) error {
@@ -64,7 +64,7 @@ func NotifyRename(instance MountHandle, oldPath, newPath string, isDirectory boo
 	if errNo == 0 && ret == 0 {
 		return errors.New("Failed to send notification")
 	}
-	return convErr(errNo)
+	return errnoToError(errNo)
 }
 
 func NotifyUpdate(instance MountHandle, filePath string) error {
@@ -76,7 +76,7 @@ func NotifyUpdate(instance MountHandle, filePath string) error {
 	if errNo == 0 && ret == 0 {
 		return errors.New("Failed to send notification")
 	}
-	return convErr(errNo)
+	return errnoToError(errNo)
 }
 
 func NotifyXAttrUpdate(instance MountHandle, filePath string) error {
@@ -88,5 +88,5 @@ func NotifyXAttrUpdate(instance MountHandle, filePath string) error {
 	if errNo == 0 && ret == 0 {
 		return errors.New("Failed to send notification")
 	}
-	return convErr(errNo)
+	return errnoToError(errNo)
 }
