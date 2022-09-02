@@ -22,7 +22,7 @@ func MountPoints() ([]*MountPointInfo, error) {
 func CreateFileSystem(options *DokanOptions, operations *DokanOperations) (MountHandle, error) {
 	return 0, ErrFailedToLoadDokan
 }
-func CloseHandle(handle MountHandle) error {
+func closeHandle(handle MountHandle) error {
 	return ErrFailedToLoadDokan
 }
 func UTF16FromString(s string) ([]uint16, error) {

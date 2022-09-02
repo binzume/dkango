@@ -122,7 +122,7 @@ func CreateFileSystem(options *DokanOptions, operations *DokanOperations) (Mount
 	return MountHandle(handle), nil
 }
 
-func CloseHandle(handle MountHandle) error {
+func closeHandle(handle MountHandle) error {
 	_, _, err := syscall.SyscallN(dokanCloseHandle.Addr(), uintptr(handle))
 	return errnoToError(err)
 }

@@ -5,7 +5,7 @@ import "unsafe"
 type MountHandle uintptr
 
 func (mh MountHandle) Close() error {
-	return CloseHandle(mh)
+	return closeHandle(mh)
 }
 
 const DOKAN_MINIMUM_COMPATIBLE_VERSION = 200
