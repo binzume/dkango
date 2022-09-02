@@ -308,8 +308,10 @@ func (*reversiFS) ReadDir(name string) ([]fs.DirEntry, error) {
 }
 
 func main() {
-
-	mount, _ := dkango.MountFS("O:", &reversiFS{}, nil)
+	mount, err := dkango.MountFS("O:", &reversiFS{}, nil)
+	if err != nil {
+		panic(err)
+	}
 	defer mount.Close()
 
 	// Block forever

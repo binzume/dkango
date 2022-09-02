@@ -45,7 +45,10 @@ func main() {
 		mountPoint = os.Args[2]
 	}
 
-	mount, _ := dkango.MountFS(mountPoint, NewWritableDirFS(srcDir), nil)
+	mount, err := dkango.MountFS(mountPoint, NewWritableDirFS(srcDir), nil)
+	if err != nil {
+		panic(err)
+	}
 	defer mount.Close()
 
 	// Block forever

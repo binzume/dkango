@@ -7,7 +7,10 @@ import (
 )
 
 func main() {
-	mount, _ := dkango.MountFS("X:", os.DirFS("."), nil)
+	mount, err := dkango.MountFS("X:", os.DirFS("."), nil)
+	if err != nil {
+		panic(err)
+	}
 	defer mount.Close()
 
 	// Block forever
