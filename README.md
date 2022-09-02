@@ -17,6 +17,13 @@ Dokan: https://ja.wikipedia.org/wiki/Dokan
 winget install dokan-dev.Dokany
 ```
 
+
+### API
+
+The only recommended interface is  `dkango.MountFS(mountPoint, fsys, options)`. You can add your file system to the OS with a few lines of code.
+
+[dokan](https://pkg.go.dev/github.com/binzume/dkango/dokan) package provides the low-level API for Dokan, but it still does not provide a stable interface. small breaking changes will be made in the future without any notice.
+
 ### examples/simple/simple.go
 
 ```go
@@ -56,10 +63,6 @@ Other interfaces such as RemoveFS, MkdirFS, RenameFS... are also available.
 ### Cross platform?
 
 See https://github.com/binzume/fsmount
-
-## TODO
-
-- Documantation & tests
 
 ## License
 

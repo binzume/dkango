@@ -7,31 +7,39 @@ import (
 	"github.com/binzume/dkango/dokan"
 )
 
+// An interface for opening files for writing.
 type OpenWriterFS interface {
 	fs.FS
 	OpenWriter(name string, flag int) (io.WriteCloser, error)
 }
 
+// An interface to remove file or directory from the file system.
 type RemoveFS interface {
 	fs.FS
 	Remove(name string) error
 }
 
+// An interface to rename file or directory from the file system.
 type RenameFS interface {
 	fs.FS
 	Rename(name string, newName string) error
 }
 
+// An interface to make new directories in the file system.
 type MkdirFS interface {
 	fs.FS
 	Mkdir(name string, mode fs.FileMode) error
 }
 
+// An interface for preferentially opening ReadDirFile.
+// If OpenDirFS is not implemented, try using fs.ReadDirFS, then Open file and try using fs.ReadDirFile.
 type OpenDirFS interface {
 	fs.FS
 	OpenDir(name string) (fs.ReadDirFile, error)
 }
 
+// An interface to truncate file to specified size.
+// If TruncateFS is not implemented, open file and try using file.Truncate(size).
 type TruncateFS interface {
 	fs.FS
 	Truncate(name string, size int64) error
@@ -39,7 +47,7 @@ type TruncateFS interface {
 
 type MountOptions struct {
 	VolumeInfo     dokan.VolumeInformation
-	TotalBytes     uint64
+	TotalBytes     uint64 // TODO: TotalBytes and AvailableBytes should be provided by fsys?
 	AvailableBytes uint64
 	Flags          uint32
 }
@@ -60,6 +68,11 @@ const (
 )
 
 // MountFS mounts fsys on mountPoint.
+//
+// mountPoint must be a valid unused drive letter or a directory on NTFS.
+//
+// To provide random access, file opened by fsys should implement io.Seeker or ReaderAt and WriterAt.
+// If only sequential access is provided, many applications will not work properly.
 func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*dokan.MountInfo, error) {
 	if opt == nil {
 		opt = &MountOptions{
