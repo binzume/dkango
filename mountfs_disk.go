@@ -20,10 +20,13 @@ func (d *disk) GetVolumeInformation(finfo *dokan.FileInfo) (dokan.VolumeInformat
 }
 
 func (d *disk) GetDiskFreeSpace(availableBytes *uint64, totalBytes *uint64, freeBytes *uint64, finfo *dokan.FileInfo) dokan.NTStatus {
-	*availableBytes = d.opt.AvailableBytes
-	*totalBytes = d.opt.TotalBytes
-	*freeBytes = d.opt.AvailableBytes
-	return dokan.STATUS_SUCCESS
+	if (d.opt.DiskSpaceFunc) != nil {
+		space := d.opt.DiskSpaceFunc()
+		*availableBytes = space.FreeBytesAvailable
+		*totalBytes = space.TotalNumberOfBytes
+		*freeBytes = space.TotalNumberOfFreeBytes
+	}
+	return dokan.STATUS_NOT_SUPPORTED
 }
 
 func (mi *disk) CreateFile(name string, secCtx uintptr, access, attrs, share, disposition, options uint32, finfo *dokan.FileInfo) (dokan.FileHandle, dokan.NTStatus) {

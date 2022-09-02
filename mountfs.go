@@ -45,11 +45,18 @@ type TruncateFS interface {
 	Truncate(name string, size int64) error
 }
 
+// DiskSpace represents the amount of space that is available on a disk.
+// https://docs.microsoft.com/ja-JP/windows/win32/api/fileapi/nf-fileapi-getdiskfreespaceexa
+type DiskSpace struct {
+	FreeBytesAvailable     uint64
+	TotalNumberOfBytes     uint64
+	TotalNumberOfFreeBytes uint64
+}
+
 type MountOptions struct {
-	VolumeInfo     dokan.VolumeInformation
-	TotalBytes     uint64 // TODO: TotalBytes and AvailableBytes should be provided by fsys?
-	AvailableBytes uint64
-	Flags          uint32
+	VolumeInfo    dokan.VolumeInformation
+	DiskSpaceFunc func() DiskSpace // optional
+	Flags         uint32
 }
 
 const (
@@ -76,10 +83,8 @@ const (
 func MountFS(mountPoint string, fsys fs.FS, opt *MountOptions) (*dokan.MountInfo, error) {
 	if opt == nil {
 		opt = &MountOptions{
-			VolumeInfo:     dokan.VolumeInformation{Name: "", FileSystemName: "Dokan"},
-			TotalBytes:     1024 * 1024 * 1024,
-			AvailableBytes: 1024 * 1024 * 1024,
-			Flags:          dokan.DOKAN_OPTION_ALT_STREAM,
+			VolumeInfo: dokan.VolumeInformation{Name: "", FileSystemName: "Dokan"},
+			Flags:      dokan.DOKAN_OPTION_ALT_STREAM,
 		}
 	}
 	return dokan.MountDisk(mountPoint, &disk{opt: opt, fsys: fsys}, opt.Flags)
