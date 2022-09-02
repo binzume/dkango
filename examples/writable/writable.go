@@ -34,6 +34,10 @@ func (fsys *writableDirFS) Mkdir(name string, mode fs.FileMode) error {
 	return os.Mkdir(path.Join(fsys.path, name), mode)
 }
 
+func (fsys *writableDirFS) Rename(name, newName string) error {
+	return os.Rename(path.Join(fsys.path, name), path.Join(fsys.path, newName))
+}
+
 func main() {
 	srcDir := "."
 	mountPoint := "X:"
