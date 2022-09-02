@@ -1,3 +1,6 @@
+//go:build windows
+// +build windows
+
 package dokan
 
 import (
@@ -6,8 +9,6 @@ import (
 
 	"golang.org/x/sys/windows"
 )
-
-const DOKAN_MINIMUM_COMPATIBLE_VERSION = 200
 
 var (
 	dokan2             = windows.NewLazySystemDLL("dokan2.dll")
@@ -92,10 +93,6 @@ func MountPoints() ([]*MountPointInfo, error) {
 	return mps, errnoToError(err)
 }
 
-func (mh MountHandle) Close() error {
-	return CloseHandle(uintptr(mh))
-}
-
 func CreateFileSystem(options *DokanOptions, operations *DokanOperations) (MountHandle, error) {
 	var handle uintptr
 	ret, _, err := syscall.SyscallN(dokanCreateFileSystem.Addr(), uintptr(unsafe.Pointer(options)), uintptr(unsafe.Pointer(operations)), uintptr(unsafe.Pointer(&handle)))
@@ -125,8 +122,8 @@ func CreateFileSystem(options *DokanOptions, operations *DokanOperations) (Mount
 	return MountHandle(handle), nil
 }
 
-func CloseHandle(handle uintptr) error {
-	_, _, err := syscall.SyscallN(dokanCloseHandle.Addr(), handle)
+func CloseHandle(handle MountHandle) error {
+	_, _, err := syscall.SyscallN(dokanCloseHandle.Addr(), uintptr(handle))
 	return errnoToError(err)
 }
 

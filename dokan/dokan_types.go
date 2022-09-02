@@ -4,6 +4,12 @@ import "unsafe"
 
 type MountHandle uintptr
 
+func (mh MountHandle) Close() error {
+	return CloseHandle(mh)
+}
+
+const DOKAN_MINIMUM_COMPATIBLE_VERSION = 200
+
 // DokanOptions
 const (
 	DOKAN_OPTION_DEBUG              = 1
