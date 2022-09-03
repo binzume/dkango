@@ -49,6 +49,9 @@ func getMountInfo(finfo *FileInfo) *MountInfo {
 }
 
 func getOpenedFile(finfo *FileInfo) FileHandle {
+	if finfo.Context == nil {
+		return nil
+	}
 	return *(*FileHandle)(finfo.Context)
 }
 
@@ -81,8 +84,9 @@ func zwCreateFile(pname *uint16, secCtx uintptr, access, attrs, share, dispositi
 	}
 	f, status := mi.disk.CreateFile(syscall.UTF16ToString(unsafe.Slice(pname, 260)), secCtx, access, attrs, share, disposition, options, finfo)
 	if f != nil {
-		mi.addFile(f) // avoid GC
-		finfo.Context = unsafe.Pointer(&f)
+		ptr := unsafe.Pointer(&f)
+		mi.addFile(ptr) // avoid GC
+		finfo.Context = ptr
 	}
 	return status
 }
@@ -148,7 +152,7 @@ func closeFile(pname *uint16, finfo *FileInfo) uintptr {
 		log.Println("ERROR: CloseFile: not opened file")
 		return 0 // CLose() is always succeeded.
 	}
-	mi.removeFile(f)
+	mi.removeFile(finfo.Context)
 	f.CloseFile(finfo)
 	finfo.Context = nil
 	return 0

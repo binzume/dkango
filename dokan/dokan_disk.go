@@ -38,19 +38,19 @@ type FileHandle interface {
 type MountInfo struct {
 	disk        Disk
 	instance    MountHandle
-	openedFiles map[FileHandle]struct{}
+	openedFiles map[unsafe.Pointer]struct{}
 	mounted     sync.WaitGroup
 	lock        sync.Mutex
 	options     *DokanOptions
 }
 
-func (m *MountInfo) addFile(f FileHandle) {
+func (m *MountInfo) addFile(f unsafe.Pointer) {
 	m.lock.Lock()
 	m.openedFiles[f] = struct{}{}
 	m.lock.Unlock()
 }
 
-func (m *MountInfo) removeFile(f FileHandle) {
+func (m *MountInfo) removeFile(f unsafe.Pointer) {
 	m.lock.Lock()
 	delete(m.openedFiles, f)
 	m.lock.Unlock()
@@ -127,7 +127,7 @@ func unregisterInstance(mi *MountInfo) {
 }
 
 func MountDisk(mountPoint string, d Disk, optionFlags uint32) (*MountInfo, error) {
-	mi := &MountInfo{disk: d, openedFiles: map[FileHandle]struct{}{}}
+	mi := &MountInfo{disk: d, openedFiles: map[unsafe.Pointer]struct{}{}}
 	if err := registerInstance(mi); err != nil {
 		return nil, err
 	}
