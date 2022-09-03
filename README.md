@@ -63,10 +63,6 @@ type OpenWriterFS interface {
 
 Other interfaces such as RemoveFS, MkdirFS, RenameFS... are also available.
 
-### Cross platform?
-
-See https://github.com/binzume/fsmount
-
 ## License
 
 MIT
