@@ -23,8 +23,6 @@ The only recommended interface is  `dkango.MountFS(mountPoint, fsys, options)`. 
 
 [dokan](https://pkg.go.dev/github.com/binzume/dkango/dokan) package provides the low-level API for Dokan, but it is not yet a stable interface. Small breaking changes will be made in the future without any notice.
 
-### 
-
 [examples/simple/simple.go](examples/simple/simple.go)
 
 ```go
@@ -49,7 +47,8 @@ func main() {
 
 ### How to create a writable FS?
 
-See examples/writable/writable.go
+See [examples/writable/writable.go](examples/writable/writable.go)
+
 
 ```
 go run ./examples/writable testdir R:
