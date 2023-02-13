@@ -125,7 +125,8 @@ func (f *openedFile) ReadFile(buf []byte, read *int32, offset int64, finfo *doka
 		}
 	}
 	if r, ok := f.file.(io.Reader); ok {
-		n, err := r.Read(buf)
+		n, err := io.ReadFull(r, buf)
+		// n, err := r.Read(buf)
 		f.pos = offset + int64(n)
 		*read = int32(n)
 		if n > 0 {
