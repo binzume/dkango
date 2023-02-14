@@ -58,7 +58,7 @@ func (f *openedFile) FindFiles(fillFindDataCallBack func(fi *dokan.WIN32_FIND_DA
 			return dokan.ErrorToNTStatus(err)
 		}
 		for {
-			if files, _ := r.ReadDir(256); len(files) == 0 || !proc(files) {
+			if files, err := r.ReadDir(256); len(files) == 0 || !proc(files) || err != nil {
 				break
 			}
 		}
