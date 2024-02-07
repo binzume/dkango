@@ -25,6 +25,7 @@ func (d *disk) GetDiskFreeSpace(availableBytes *uint64, totalBytes *uint64, free
 		*availableBytes = space.FreeBytesAvailable
 		*totalBytes = space.TotalNumberOfBytes
 		*freeBytes = space.TotalNumberOfFreeBytes
+		return dokan.STATUS_SUCCESS
 	}
 	return dokan.STATUS_NOT_SUPPORTED
 }
